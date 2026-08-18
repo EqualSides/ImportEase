@@ -1,26 +1,28 @@
 {
-  "name": "theperpetualhive-accela-tool",
-  "private": true,
+  "name": "importease",
   "version": "0.1.0",
-  "description": "Accela Configuration Manager XML import/export tool — read, edit, and repackage Configuration Manager exports without manual data entry.",
+  "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
-    "start": "next start"
+    "build": "vitest run && next build",
+    "start": "next start",
+    "lint": "next lint",
+    "test": "vitest run"
   },
   "dependencies": {
-    "next": "latest",
-    "react": "latest",
-    "react-dom": "latest",
-    "fast-xml-parser": "latest",
-    "ag-grid-community": "latest",
-    "ag-grid-react": "latest",
-    "@supabase/supabase-js": "latest"
+    "ag-grid-community": "^32.3.0",
+    "ag-grid-react": "^32.3.0",
+    "fast-xml-parser": "^4",
+    "jszip": "^3",
+    "next": "^15",
+    "react": "^19",
+    "react-dom": "^19"
   },
   "devDependencies": {
-    "typescript": "latest",
-    "@types/node": "latest",
-    "@types/react": "latest"
-  },
-  "notes": "Dependency versions intentionally left as 'latest' — this scaffold was built without network access to npm. Claude Code should pin actual versions on first `npm install`."
+    "@types/node": "^22",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "typescript": "^5",
+    "vitest": "^2"
+  }
 }
