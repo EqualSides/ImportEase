@@ -22,6 +22,50 @@ import { buildExportedXml, parseStandardChoiceXml } from "../lib/xml/standardCho
 const fixturesDir = join(__dirname, "..", "fixtures", "standard-choice-samples");
 const files = readdirSync(fixturesDir).filter((f) => f.endsWith(".xml"));
 
+/**
+ * These fixtures are large enough that vitest's default toEqual() failure
+ * printer (which dumps both full trees) is unreadable/impractically long.
+ * This walks both trees together and reports only the first leaf where they
+ * diverge, by path.
+ */
+function firstDiffPath(a: unknown, b: unknown, path: string): string | null {
+  if (a === b) return null;
+  if (Array.isArray(a) && Array.isArray(b)) {
+    if (a.length !== b.length) {
+      return `${path}: array length ${a.length} vs ${b.length}`;
+    }
+    for (let i = 0; i < a.length; i++) {
+      const d = firstDiffPath(a[i], b[i], `${path}[${i}]`);
+      if (d) return d;
+    }
+    return null;
+  }
+  if (a && b && typeof a === "object" && typeof b === "object") {
+    const keysA = Object.keys(a as object);
+    const keysB = Object.keys(b as object);
+    const onlyA = keysA.filter((k) => !keysB.includes(k));
+    const onlyB = keysB.filter((k) => !keysA.includes(k));
+    if (onlyA.length || onlyB.length) {
+      return `${path}: keys only in original [${onlyA}], only in exported [${onlyB}]`;
+    }
+    for (const k of keysA) {
+      const d = firstDiffPath((a as any)[k], (b as any)[k], `${path}.${k}`);
+      if (d) return d;
+    }
+    return null;
+  }
+  return `${path}: ${JSON.stringify(a)} vs ${JSON.stringify(b)}`;
+}
+
+function expectSameRecords(original: unknown, exported: unknown) {
+  const diff = firstDiffPath(original, exported, "records");
+  if (diff) {
+    // eslint-disable-next-line no-console
+    console.error("ROUND-TRIP MISMATCH:", diff);
+  }
+  expect(diff).toBeNull();
+}
+
 describe("StandardChoiceModel round-trip fidelity", () => {
   it("found the sample fixtures", () => {
     expect(files.length).toBeGreaterThan(0);
@@ -47,7 +91,7 @@ describe("StandardChoiceModel round-trip fidelity", () => {
 
       // Every record, nested value, attribute and field — including
       // undocumented ones like `valueSize` on a standardChoice — survives.
-      expect(parsedExported.records).toEqual(parsedOriginal.records);
+      expectSameRecords(parsedOriginal.records, parsedExported.records);
     });
 
     it(`re-serializes ${file} stably on a second pass`, () => {
@@ -55,7 +99,7 @@ describe("StandardChoiceModel round-trip fidelity", () => {
       const parsedOriginal = parseStandardChoiceXml(original);
       const firstPass = parseStandardChoiceXml(buildExportedXml(parsedOriginal));
       const secondPass = parseStandardChoiceXml(buildExportedXml(firstPass));
-      expect(secondPass.records).toEqual(firstPass.records);
+      expectSameRecords(firstPass.records, secondPass.records);
     });
 
     it(`preserves self-closing empty collections in ${file}`, () => {
