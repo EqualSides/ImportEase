@@ -1,0 +1,26 @@
+{
+  "name": "theperpetualhive-accela-tool",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Accela Configuration Manager XML import/export tool — read, edit, and repackage Configuration Manager exports without manual data entry.",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start"
+  },
+  "dependencies": {
+    "next": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "fast-xml-parser": "latest",
+    "ag-grid-community": "latest",
+    "ag-grid-react": "latest",
+    "@supabase/supabase-js": "latest"
+  },
+  "devDependencies": {
+    "typescript": "latest",
+    "@types/node": "latest",
+    "@types/react": "latest"
+  },
+  "notes": "Dependency versions intentionally left as 'latest' — this scaffold was built without network access to npm. Claude Code should pin actual versions on first `npm install`."
+}
