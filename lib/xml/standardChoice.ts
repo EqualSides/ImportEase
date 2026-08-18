@@ -89,7 +89,7 @@ function getText(node: PNode): string {
   const kids = node[tag];
   if (!Array.isArray(kids) || kids.length === 0) return "";
   const textNode = kids.find((k: PNode) => TEXT_KEY in k);
-  return textNode ? String(textNode[TEXT_KEY]) : "";
+  return textNode ? decodeText(String(textNode[TEXT_KEY])) : "";
 }
 
 function getChildText(children: PNode[], tag: string): string {
@@ -97,9 +97,15 @@ function getChildText(children: PNode[], tag: string): string {
   return child ? getText(child) : "";
 }
 
+/**
+ * `value` is the logical (decoded) string as seen in the grid — it gets
+ * entity-encoded here before being stored. Untouched fields never pass
+ * through this function, so their stored text stays exactly as the parser
+ * produced it (see the module doc comment on entity handling).
+ */
 function setChildText(children: PNode[], tag: string, value: string) {
   const child = findChildByTag(children, tag);
-  const nextChildren = value === "" ? [] : [{ [TEXT_KEY]: value }];
+  const nextChildren = value === "" ? [] : [{ [TEXT_KEY]: escapeText(value) }];
   if (child) {
     child[tag] = nextChildren;
   } else {
@@ -144,15 +150,34 @@ export function nextRefIdNumber(
 }
 
 // ---------------------------------------------------------------------------
-// Escaping (only ever applied to values the user actually typed/pasted)
+// Entity encode/decode — only ever applied at the edit boundary (setChildText
+// encodes, getText decodes). Parsed-but-untouched text is never round-tripped
+// through either function, so it keeps its exact original encoding; running
+// it through escapeText on every serialize (as an earlier version of this
+// file did) double-escapes already-encoded text like "&amp;" -> "&amp;amp;".
 // ---------------------------------------------------------------------------
 
 function escapeText(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-function escapeAttr(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
+function decodeText(s: string): string {
+  return s.replace(/&(amp|lt|gt|quot|apos);/g, (_match, name: string) => {
+    switch (name) {
+      case "amp":
+        return "&";
+      case "lt":
+        return "<";
+      case "gt":
+        return ">";
+      case "quot":
+        return '"';
+      case "apos":
+        return "'";
+      default:
+        return _match;
+    }
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -202,7 +227,8 @@ export function parseStandardChoiceXml(xmlText: string): ParsedStandardChoiceFil
 
 function serializeNode(node: PNode): string {
   if (TEXT_KEY in node) {
-    return escapeText(String(node[TEXT_KEY]));
+    // Already in stored (encoded) form — see the encode/decode comment above.
+    return String(node[TEXT_KEY]);
   }
   const tag = getTagName(node);
   if (!tag) return "";
@@ -211,7 +237,7 @@ function serializeNode(node: PNode): string {
   const attrs = node[ATTR_KEY] as Record<string, string> | undefined;
   const attrStr = attrs
     ? Object.entries(attrs)
-        .map(([k, v]) => ` ${k.slice(2)}="${escapeAttr(String(v))}"`)
+        .map(([k, v]) => ` ${k.slice(2)}="${String(v)}"`)
         .join("")
     : "";
 
@@ -237,7 +263,7 @@ export function serializeStandardChoiceXml(
   overrides?: Partial<Pick<ListAttrs, "exportUser" | "exportDateTime">>
 ): string {
   const attrs: ListAttrs = { ...file.listAttrs, ...overrides };
-  const attrStr = LIST_ATTR_ORDER.map((k) => ` ${k}="${escapeAttr(attrs[k])}"`).join("");
+  const attrStr = LIST_ATTR_ORDER.map((k) => ` ${k}="${attrs[k]}"`).join("");
   const inner = file.records.map(serializeNode).join("");
   return `${XML_DECLARATION}\n<list${attrStr}>${inner}</list>`;
 }
