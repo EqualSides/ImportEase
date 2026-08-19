@@ -107,7 +107,7 @@ function buildColumnDefs<T extends { uid: string }>(meta: ColumnMeta[], rows: T[
     hide: c.hide,
     resizable: true,
     width: c.hide ? undefined : widthForColumn(rows, c.field, c.headerName),
-  }));
+  })) as ColDef<T>[];
 }
 
 /**
