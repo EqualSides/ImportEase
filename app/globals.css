@@ -97,15 +97,6 @@ button {
   white-space: nowrap;
 }
 
-.topbar-title .dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--accent-cyan);
-  box-shadow: 0 0 8px var(--accent-cyan);
-  flex-shrink: 0;
-}
-
 .topbar-meta {
   font-family: var(--font-mono), monospace;
   font-size: 12px;
@@ -217,7 +208,7 @@ button {
   border: 1px solid var(--border-hairline);
   border-radius: 5px;
   padding: 5px 8px;
-  min-width: 120px;
+  width: 120px;
 }
 
 .text-input:focus {

@@ -414,7 +414,9 @@ export default function Home() {
       )}
       <div className="topbar">
         <div className="topbar-title">
-          <span className="dot" />
+          <button className="btn icon-btn" onClick={toggleTheme} title="Toggle light/dark mode">
+            {theme === "dark" ? "☀" : "☾"}
+          </button>
           ImportEase
         </div>
 
@@ -525,11 +527,6 @@ export default function Home() {
           disabled={!zipResult || exporting || undecidedSensitive.length > 0}
         >
           {exporting ? "Building zip…" : "Export .zip"}
-        </button>
-
-        {/* 7 */}
-        <button className="btn icon-btn" onClick={toggleTheme} title="Toggle light/dark mode">
-          {theme === "dark" ? "☀" : "☾"}
         </button>
       </div>
 
