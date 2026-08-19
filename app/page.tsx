@@ -2,12 +2,80 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import StandardChoiceGrid, { StandardChoiceGridHandle } from "@/components/StandardChoiceGrid";
-import { inferCommonAgencyId, toStandardChoiceRow } from "@/lib/xml/standardChoice";
+import {
+  getStandardChoiceValueNodes,
+  inferCommonAgencyId,
+  toStandardChoiceRow,
+  toStandardChoiceValueRow,
+} from "@/lib/xml/standardChoice";
 import { detectSensitiveEntries } from "@/lib/sensitiveFiles";
 import { exportZipInWorker, parseZipInWorker } from "@/lib/worker/client";
 import type { ParseZipResult, StandardChoiceZipEntry } from "@/lib/types";
 
 const THEME_STORAGE_KEY = "importease-theme";
+
+// Full category catalog (see category-catalog.md) so the "start new file"
+// picker shows what's coming, not just what's built — Data Manager Version
+// (tooling metadata, not editable config) and Workflow (confirmed
+// view/pass-through only, never editable — see architecture-and-safety-
+// update.md) are intentionally excluded, since neither is ever a "start
+// blank and fill in" target.
+const CATEGORY_OPTIONS: { value: string; label: string; available: boolean }[] = [
+  { value: "standardChoice", label: "Standard Choice", available: true },
+  { value: "sharedDropDown", label: "Shared Drop-down List", available: false },
+  { value: "refAddressTypeGroup", label: "Ref Address Type Group", available: false },
+  { value: "orgAgency", label: "Organization/Agency", available: false },
+  { value: "inspRelateInsp", label: "Insp Relate Insp", available: false },
+  { value: "conditions", label: "Conditions", available: false },
+  { value: "rapoTemplate", label: "RAPO Template", available: false },
+  { value: "timeGroup", label: "Time Group", available: false },
+  { value: "timeTypes", label: "Time Types", available: false },
+  { value: "checklistGroup", label: "Checklist Group", available: false },
+  { value: "referenceMask", label: "Reference Mask", available: false },
+  { value: "refLookupTable", label: "Ref Lookup Table", available: false },
+  { value: "emailMessage", label: "Email Message", available: false },
+  { value: "userProfiles", label: "User Profiles", available: false },
+  { value: "standardCommentGroup", label: "Standard Comment Group", available: false },
+  { value: "departmentType", label: "Department Type", available: false },
+  { value: "user", label: "User", available: false },
+  { value: "refInspectionResultGroup", label: "Ref Inspection Result Group", available: false },
+  { value: "commentGroup", label: "Comment Group", available: false },
+  { value: "sequence", label: "Sequence", available: false },
+  { value: "applicationStatusGroup", label: "Application Status Group", available: false },
+  { value: "refCalendar", label: "Ref Calendar", available: false },
+  { value: "inspectionGroup", label: "Inspection Group", available: false },
+  { value: "refDocument", label: "Ref Document", available: false },
+  { value: "guideSheet", label: "Guide Sheet", available: false },
+  { value: "smartChoiceGroup", label: "Smart Choice Group", available: false },
+  { value: "virtualProcess", label: "Virtual Process", available: false },
+  { value: "refFeeSchedule", label: "Ref Fee Schedule", available: false },
+  { value: "capType", label: "Cap Type", available: false },
+  { value: "acaConfiguration", label: "ACA Configuration", available: false },
+  { value: "agencyGroup", label: "Agency Group", available: false },
+  { value: "formLayoutEditor", label: "Form Layout Editor", available: false },
+  { value: "asiGroups", label: "ASI Groups", available: false },
+];
+
+// Fields the schema doc (docs/schema-standard-choice.md) marks "always" —
+// required before export can proceed, same treatment as the required
+// Agency ID field.
+function validateStandardChoiceEntries(entries: StandardChoiceZipEntry[]): string | null {
+  for (const entry of entries) {
+    for (const record of entry.records) {
+      const row = toStandardChoiceRow(record);
+      if (!row.name.trim()) {
+        return `"${entry.path}" has a Standard Choice with no Name set — every Standard Choice needs a Name before export.`;
+      }
+      for (const valueNode of getStandardChoiceValueNodes(record)) {
+        const valueRow = toStandardChoiceValueRow(valueNode);
+        if (!valueRow.value.trim()) {
+          return `"${entry.path}" — "${row.name || "(unnamed)"}" has a value with no Value set — every value needs a Value before export.`;
+        }
+      }
+    }
+  }
+  return null;
+}
 
 function makeBlankStandardChoiceEntry(): StandardChoiceZipEntry {
   return {
@@ -257,6 +325,11 @@ export default function Home() {
       setError("Decide Keep or Remove for every flagged file below before export.");
       return;
     }
+    const validationError = validateStandardChoiceEntries(standardChoiceEntries);
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
     setExporting(true);
     setError(null);
     try {
@@ -291,7 +364,7 @@ export default function Home() {
     } finally {
       setExporting(false);
     }
-  }, [zipResult, exportZipName, agencyId, undecidedSensitive, sensitiveDecisions]);
+  }, [zipResult, exportZipName, agencyId, undecidedSensitive, sensitiveDecisions, standardChoiceEntries]);
 
   // Cascading on every keystroke would be wasteful (it touches every
   // record/child in the file), but relying solely on blur/Enter to commit
@@ -392,8 +465,23 @@ export default function Home() {
         </label>
 
         <select className="select" value="" onChange={handleNewFile} aria-label="Start a new file">
-          <option value="">+ New blank file</option>
-          <option value="standardChoice">Standard Choice</option>
+          <option value="" disabled hidden>
+            Start new file
+          </option>
+          <optgroup label="Available now">
+            {CATEGORY_OPTIONS.filter((c) => c.available).map((c) => (
+              <option key={c.value} value={c.value}>
+                {c.label}
+              </option>
+            ))}
+          </optgroup>
+          <optgroup label="Coming soon">
+            {CATEGORY_OPTIONS.filter((c) => !c.available).map((c) => (
+              <option key={c.value} value={c.value} disabled>
+                {c.label}
+              </option>
+            ))}
+          </optgroup>
         </select>
 
         <button className="btn btn-danger" onClick={handleClear} disabled={!zipResult}>
