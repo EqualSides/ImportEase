@@ -408,6 +408,7 @@ export default function Home() {
           className="btn btn-primary"
           onClick={handleExport}
           disabled={!zipResult || exporting || undecidedSensitive.length > 0}
+          style={{ marginLeft: "auto" }}
         >
           {exporting ? "Building zip…" : "Export .zip"}
         </button>
@@ -459,7 +460,7 @@ export default function Home() {
         {activeEntry ? (
           <>
             {standardChoiceEntries.length > 1 && (
-              <div style={{ display: "flex", gap: 8, padding: "12px 20px 0" }}>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", padding: "6px 20px 0" }}>
                 {standardChoiceEntries.map((en) => (
                   <button
                     key={en.path}
