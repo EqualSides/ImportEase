@@ -78,7 +78,7 @@ button {
 .topbar {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 10px;
   padding: 10px 20px;
   min-height: 56px;
   flex-shrink: 0;
@@ -217,7 +217,7 @@ button {
   border: 1px solid var(--border-hairline);
   border-radius: 5px;
   padding: 5px 8px;
-  min-width: 160px;
+  min-width: 120px;
 }
 
 .text-input:focus {
@@ -434,6 +434,9 @@ body.resizing-panels {
   background: rgba(232, 103, 122, 0.12);
 }
 
+/* max-width (not just opacity) collapses this to zero footprint when
+   hidden — it's rendered unconditionally so the fade transition works,
+   but must not permanently reserve topbar width it isn't using. */
 .saved-badge {
   display: inline-flex;
   align-items: center;
@@ -442,11 +445,15 @@ body.resizing-panels {
   font-size: 12px;
   color: var(--accent-cyan);
   opacity: 0;
-  transition: opacity 0.25s ease;
+  max-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  transition: opacity 0.25s ease, max-width 0.25s ease;
 }
 
 .saved-badge.visible {
   opacity: 1;
+  max-width: 160px;
 }
 
 .saved-badge .pulse-dot {
