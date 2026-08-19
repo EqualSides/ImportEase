@@ -30,6 +30,36 @@ function withZipExtension(name: string): string {
   return /\.zip$/i.test(trimmed) ? trimmed : `${trimmed}.zip`;
 }
 
+/**
+ * Merges a newly-uploaded/dropped zip's entries into the current session so
+ * multiple zips can be combined and exported as one file. If an entry path
+ * collides with one already in the session, the incoming one is suffixed
+ * "(2)", "(3)", etc. rather than silently overwriting the existing entry.
+ */
+function mergeParseResults(base: ParseZipResult | null, addition: ParseZipResult): ParseZipResult {
+  if (!base) return addition;
+  const existingPaths = new Set(base.entries.map((e) => e.path));
+  const mergedEntries = [...base.entries];
+  for (const entry of addition.entries) {
+    let path = entry.path;
+    if (existingPaths.has(path)) {
+      const dot = path.lastIndexOf(".");
+      const stem = dot === -1 ? path : path.slice(0, dot);
+      const ext = dot === -1 ? "" : path.slice(dot);
+      let n = 2;
+      let candidate = `${stem} (${n})${ext}`;
+      while (existingPaths.has(candidate)) {
+        n++;
+        candidate = `${stem} (${n})${ext}`;
+      }
+      path = candidate;
+    }
+    existingPaths.add(path);
+    mergedEntries.push(path === entry.path ? entry : { ...entry, path });
+  }
+  return { zipName: base.zipName, entries: mergedEntries };
+}
+
 export default function Home() {
   const [zipResult, setZipResult] = useState<ParseZipResult | null>(null);
   const [activePath, setActivePath] = useState<string | null>(null);
@@ -86,34 +116,42 @@ export default function Home() {
     );
   }, []);
 
-  const processFile = useCallback(
-    async (file: File) => {
-      if (!file.name.toLowerCase().endsWith(".zip")) {
-        setError("Please drop a .zip file (an Accela Configuration Manager export).");
+  // Uploading/dropping additional zip(s) while a session is already open
+  // merges into it (see mergeParseResults) rather than replacing it, so
+  // multiple exports can be combined and exported as one file. A fresh
+  // upload with nothing loaded yet is just a merge onto an empty session.
+  const processFiles = useCallback(
+    async (files: File[]) => {
+      const zipFiles = files.filter((f) => f.name.toLowerCase().endsWith(".zip"));
+      if (zipFiles.length === 0) {
+        setError("Please choose a .zip file (an Accela Configuration Manager export).");
         return;
       }
       setLoading(true);
       setError(null);
-      setZipResult(null);
-      setActivePath(null);
       try {
-        loadEntries(await parseZipInWorker(file));
+        let merged = zipResult;
+        for (const file of zipFiles) {
+          const parsed = await parseZipInWorker(file);
+          merged = mergeParseResults(merged, parsed);
+        }
+        if (merged) loadEntries(merged);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Upload failed");
       } finally {
         setLoading(false);
       }
     },
-    [loadEntries]
+    [loadEntries, zipResult]
   );
 
   const handleFileChange = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (file) await processFile(file);
+      const files = Array.from(e.target.files ?? []);
+      if (files.length) await processFiles(files);
       e.target.value = "";
     },
-    [processFile]
+    [processFiles]
   );
 
   // Page-wide drag-and-drop, in addition to the Upload button. dragDepth
@@ -143,10 +181,10 @@ export default function Home() {
       if (!e.dataTransfer.types.includes("Files")) return;
       e.preventDefault();
       setDragDepth(0);
-      const file = e.dataTransfer.files?.[0];
-      if (file) processFile(file);
+      const files = Array.from(e.dataTransfer.files ?? []);
+      if (files.length) processFiles(files);
     },
-    [processFile]
+    [processFiles]
   );
 
   const handleNewFile = useCallback(
@@ -252,7 +290,6 @@ export default function Home() {
     }, 500);
   }, []);
 
-  const passthroughCount = zipResult?.entries.filter((en) => en.kind === "passthrough").length ?? 0;
   const activeEntry = standardChoiceEntries.find((en) => en.path === activePath) ?? null;
   const gridThemeClass = theme === "dark" ? "ag-theme-quartz-dark" : "ag-theme-quartz";
 
@@ -282,9 +319,46 @@ export default function Home() {
           Saved in session
         </div>
 
+        {zipResult && (
+          <>
+            <label className="field-label">
+              Export as
+              <input
+                className="text-input"
+                value={exportZipName}
+                onChange={(e) => setExportZipName(e.target.value)}
+                placeholder="export.zip"
+              />
+            </label>
+
+            <label className="field-label">
+              Agency ID
+              <input
+                className={`text-input${!agencyId.trim() ? " invalid" : ""}`}
+                value={agencyId}
+                onChange={(e) => handleAgencyIdChange(e.target.value)}
+                onBlur={(e) => commitAgencyId(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    commitAgencyId(agencyId);
+                    (e.target as HTMLInputElement).blur();
+                  }
+                }}
+                placeholder="required"
+              />
+            </label>
+          </>
+        )}
+
         <label className="file-input-label">
           Upload .zip
-          <input type="file" accept=".zip" onChange={handleFileChange} disabled={loading} />
+          <input
+            type="file"
+            accept=".zip"
+            multiple
+            onChange={handleFileChange}
+            disabled={loading}
+          />
         </label>
 
         <select className="select" value="" onChange={handleNewFile} aria-label="Start a new file">
@@ -305,7 +379,7 @@ export default function Home() {
         </button>
       </div>
 
-      {sensitiveMatches.length > 0 && (
+      {undecidedSensitive.length > 0 && (
         <div className="sensitive-gate">
           <div className="sensitive-gate-header">
             ⚠ This zip includes files that carry user accounts or security/permission data.
@@ -336,42 +410,6 @@ export default function Home() {
               </div>
             );
           })}
-        </div>
-      )}
-
-      {zipResult && (
-        <div className="meta-bar">
-          <label className="field-label">
-            Export as
-            <input
-              className="text-input"
-              value={exportZipName}
-              onChange={(e) => setExportZipName(e.target.value)}
-              placeholder="export.zip"
-            />
-          </label>
-
-          <label className="field-label">
-            Agency ID
-            <input
-              className={`text-input${!agencyId.trim() ? " invalid" : ""}`}
-              value={agencyId}
-              onChange={(e) => handleAgencyIdChange(e.target.value)}
-              onBlur={(e) => commitAgencyId(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  commitAgencyId(agencyId);
-                  (e.target as HTMLInputElement).blur();
-                }
-              }}
-              placeholder="required"
-            />
-          </label>
-
-          <div className="topbar-meta">
-            {standardChoiceEntries.length} Standard Choice file(s), {passthroughCount} passed
-            through untouched
-          </div>
         </div>
       )}
 

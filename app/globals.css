@@ -79,9 +79,10 @@ button {
   display: flex;
   align-items: center;
   gap: 14px;
-  padding: 0 20px;
-  height: 56px;
+  padding: 10px 20px;
+  min-height: 56px;
   flex-shrink: 0;
+  flex-wrap: wrap;
   border-bottom: 1px solid var(--border-hairline);
   background: var(--bg-panel);
 }
@@ -198,17 +199,6 @@ button {
 }
 
 /* Meta bar (export filename, Agency ID) --------------------------------- */
-
-.meta-bar {
-  display: flex;
-  align-items: center;
-  gap: 20px;
-  padding: 10px 20px;
-  border-bottom: 1px solid var(--border-hairline);
-  background: var(--bg-panel);
-  flex-wrap: wrap;
-  flex-shrink: 0;
-}
 
 .field-label {
   display: flex;
