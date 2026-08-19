@@ -88,6 +88,21 @@ export default function Home() {
     }
   }, []);
 
+  // Everything lives in memory only (no persistence, by design — see
+  // CLAUDE.md) — closing or reloading the tab loses whatever hasn't been
+  // exported yet. Warn before that happens. Browsers show their own fixed
+  // wording here; the returnValue/preventDefault pair is what triggers
+  // that native prompt, custom text isn't supported by any modern browser.
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      if (!zipResult) return;
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [zipResult]);
+
   const toggleTheme = useCallback(() => {
     setTheme((prev) => {
       const next = prev === "dark" ? "light" : "dark";
@@ -203,6 +218,21 @@ export default function Home() {
     },
     [zipResult, loadEntries]
   );
+
+  // Uploads/drops now merge into the current session rather than replacing
+  // it (see mergeParseResults), so there needs to be an explicit way back
+  // to a clean slate.
+  const handleClear = useCallback(() => {
+    if (zipResult && !window.confirm("Clear the current session? Unsaved changes will be lost.")) {
+      return;
+    }
+    setZipResult(null);
+    setActivePath(null);
+    setExportZipName("");
+    setAgencyId("");
+    setSensitiveDecisions({});
+    setError(null);
+  }, [zipResult]);
 
   const standardChoiceEntries = (zipResult?.entries.filter(
     (en) => en.kind === "standardChoice"
@@ -365,6 +395,10 @@ export default function Home() {
           <option value="">+ New blank file</option>
           <option value="standardChoice">Standard Choice</option>
         </select>
+
+        <button className="btn btn-danger" onClick={handleClear} disabled={!zipResult}>
+          Clear
+        </button>
 
         <button className="btn icon-btn" onClick={toggleTheme} title="Toggle light/dark mode">
           {theme === "dark" ? "☀" : "☾"}
