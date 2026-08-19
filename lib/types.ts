@@ -1,8 +1,15 @@
-import type { ListAttrs, PNode } from "./xml/standardChoice";
+import type { ListAttrs, PNode } from "./xml/pnode";
 
 export interface StandardChoiceZipEntry {
   path: string;
   kind: "standardChoice";
+  listAttrs: ListAttrs;
+  records: PNode[];
+}
+
+export interface SharedDropDownZipEntry {
+  path: string;
+  kind: "sharedDropDown";
   listAttrs: ListAttrs;
   records: PNode[];
 }
@@ -17,7 +24,7 @@ export interface PassthroughZipEntry {
   bytes: Uint8Array;
 }
 
-export type ZipEntryData = StandardChoiceZipEntry | PassthroughZipEntry;
+export type ZipEntryData = StandardChoiceZipEntry | SharedDropDownZipEntry | PassthroughZipEntry;
 
 export interface ParseZipResult {
   zipName: string;

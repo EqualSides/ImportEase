@@ -1,16 +1,50 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import StandardChoiceGrid, { StandardChoiceGridHandle } from "@/components/StandardChoiceGrid";
+import StandardChoiceGrid from "@/components/StandardChoiceGrid";
+import SharedDropDownGrid from "@/components/SharedDropDownGrid";
 import {
   getStandardChoiceValueNodes,
-  inferCommonAgencyId,
+  inferCommonAgencyId as inferCommonAgencyIdStandardChoice,
   toStandardChoiceRow,
   toStandardChoiceValueRow,
 } from "@/lib/xml/standardChoice";
+import {
+  getSharedDropDownValueNodes,
+  inferCommonAgencyId as inferCommonAgencyIdSharedDropDown,
+  toSharedDropDownRow,
+  toSharedDropDownValueRow,
+} from "@/lib/xml/sharedDropDownList";
 import { detectSensitiveEntries } from "@/lib/sensitiveFiles";
 import { exportZipInWorker, parseZipInWorker } from "@/lib/worker/client";
-import type { ParseZipResult, StandardChoiceZipEntry } from "@/lib/types";
+import type {
+  ParseZipResult,
+  SharedDropDownZipEntry,
+  StandardChoiceZipEntry,
+  ZipEntryData,
+} from "@/lib/types";
+
+/** Both grid components expose exactly this shape via forwardRef — a shared
+ * structural type lets page.tsx hold one ref regardless of which category's
+ * grid is currently mounted. */
+interface GridHandle {
+  applyAgencyIdToAll: (value: string) => void;
+}
+
+type EditableZipEntry = StandardChoiceZipEntry | SharedDropDownZipEntry;
+
+function isEditableEntry(entry: ZipEntryData): entry is EditableZipEntry {
+  return entry.kind === "standardChoice" || entry.kind === "sharedDropDown";
+}
+
+/** Dispatches to the right model's Agency ID field per entry kind — see the
+ * per-model field-name-variance note in lib/xml/sharedDropDownList.ts. */
+function inferAgencyIdForEntry(entry: EditableZipEntry): string {
+  if (entry.kind === "standardChoice") {
+    return inferCommonAgencyIdStandardChoice(entry.records.map(toStandardChoiceRow));
+  }
+  return inferCommonAgencyIdSharedDropDown(entry.records.map(toSharedDropDownRow));
+}
 
 const THEME_STORAGE_KEY = "importease-theme";
 
@@ -22,7 +56,7 @@ const THEME_STORAGE_KEY = "importease-theme";
 // blank and fill in" target.
 const CATEGORY_OPTIONS: { value: string; label: string; available: boolean }[] = [
   { value: "standardChoice", label: "Standard Choice", available: true },
-  { value: "sharedDropDown", label: "Shared Drop-down List", available: false },
+  { value: "sharedDropDown", label: "Shared Drop-down List", available: true },
   { value: "refAddressTypeGroup", label: "Ref Address Type Group", available: false },
   { value: "orgAgency", label: "Organization/Agency", available: false },
   { value: "inspRelateInsp", label: "Insp Relate Insp", available: false },
@@ -92,6 +126,42 @@ function makeBlankStandardChoiceEntry(): StandardChoiceZipEntry {
   };
 }
 
+function makeBlankSharedDropDownEntry(): SharedDropDownZipEntry {
+  return {
+    path: "SharedDropDownListModel.xml",
+    kind: "sharedDropDown",
+    listAttrs: {
+      version: "9.0.0",
+      minorVersion: "26",
+      exportUser: "",
+      exportDateTime: "",
+      description: "null",
+    },
+    records: [],
+  };
+}
+
+// Fields the schema doc marks "always" on sharedDropDownListModel/
+// sharedDropDownValue — required before export, same treatment as Standard
+// Choice's Name/Value requirement.
+function validateSharedDropDownEntries(entries: SharedDropDownZipEntry[]): string | null {
+  for (const entry of entries) {
+    for (const record of entry.records) {
+      const row = toSharedDropDownRow(record);
+      if (!row.name.trim()) {
+        return `"${entry.path}" has a Shared Drop-down List with no Name set — every list needs a Name before export.`;
+      }
+      for (const valueNode of getSharedDropDownValueNodes(record)) {
+        const valueRow = toSharedDropDownValueRow(valueNode);
+        if (!valueRow.bizdomainValue.trim()) {
+          return `"${entry.path}" — "${row.name || "(unnamed)"}" has a value with no Value set — every value needs a Value before export.`;
+        }
+      }
+    }
+  }
+  return null;
+}
+
 function withZipExtension(name: string): string {
   const trimmed = name.trim();
   if (!trimmed) return "export.zip";
@@ -145,7 +215,7 @@ export default function Home() {
   // a blank-file session somehow ends up including one of these files.
   const [sensitiveDecisions, setSensitiveDecisions] = useState<Record<string, "keep" | "remove">>({});
   const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const gridRef = useRef<StandardChoiceGridHandle>(null);
+  const gridRef = useRef<GridHandle>(null);
   const agencyDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -190,13 +260,9 @@ export default function Home() {
     setZipResult(result);
     setExportZipName(result.zipName);
     setSensitiveDecisions({});
-    const firstStandardChoice = result.entries.find((en) => en.kind === "standardChoice") as
-      | StandardChoiceZipEntry
-      | undefined;
-    setActivePath(firstStandardChoice?.path ?? null);
-    setAgencyId(
-      firstStandardChoice ? inferCommonAgencyId(firstStandardChoice.records.map(toStandardChoiceRow)) : ""
-    );
+    const firstEditable = result.entries.find(isEditableEntry);
+    setActivePath(firstEditable?.path ?? null);
+    setAgencyId(firstEditable ? inferAgencyIdForEntry(firstEditable) : "");
   }, []);
 
   // Uploading/dropping additional zip(s) while a session is already open
@@ -272,9 +338,15 @@ export default function Home() {
 
   const handleNewFile = useCallback(
     (e: React.ChangeEvent<HTMLSelectElement>) => {
-      const kind = e.target.value;
+      const category = e.target.value;
       e.target.value = "";
-      if (kind !== "standardChoice") return;
+      const blankEntry =
+        category === "standardChoice"
+          ? makeBlankStandardChoiceEntry()
+          : category === "sharedDropDown"
+            ? makeBlankSharedDropDownEntry()
+            : null;
+      if (!blankEntry) return;
       if (
         zipResult &&
         !window.confirm("Start a new blank file? Unsaved changes in the current file will be lost.")
@@ -282,7 +354,7 @@ export default function Home() {
         return;
       }
       setError(null);
-      loadEntries({ zipName: "new-export.zip", entries: [makeBlankStandardChoiceEntry()] });
+      loadEntries({ zipName: "new-export.zip", entries: [blankEntry] });
     },
     [zipResult, loadEntries]
   );
@@ -305,9 +377,13 @@ export default function Home() {
     setError(null);
   }, [zipResult]);
 
-  const standardChoiceEntries = (zipResult?.entries.filter(
-    (en) => en.kind === "standardChoice"
-  ) ?? []) as StandardChoiceZipEntry[];
+  const editableEntries = (zipResult?.entries.filter(isEditableEntry) ?? []) as EditableZipEntry[];
+  const standardChoiceEntries = editableEntries.filter(
+    (en): en is StandardChoiceZipEntry => en.kind === "standardChoice"
+  );
+  const sharedDropDownEntries = editableEntries.filter(
+    (en): en is SharedDropDownZipEntry => en.kind === "sharedDropDown"
+  );
 
   const sensitiveMatches = zipResult
     ? detectSensitiveEntries(zipResult.entries.map((en) => en.path))
@@ -328,7 +404,9 @@ export default function Home() {
       setError("Decide Keep or Remove for every flagged file below before export.");
       return;
     }
-    const validationError = validateStandardChoiceEntries(standardChoiceEntries);
+    const validationError =
+      validateStandardChoiceEntries(standardChoiceEntries) ??
+      validateSharedDropDownEntries(sharedDropDownEntries);
     if (validationError) {
       setError(validationError);
       return;
@@ -367,7 +445,15 @@ export default function Home() {
     } finally {
       setExporting(false);
     }
-  }, [zipResult, exportZipName, agencyId, undecidedSensitive, sensitiveDecisions, standardChoiceEntries]);
+  }, [
+    zipResult,
+    exportZipName,
+    agencyId,
+    undecidedSensitive,
+    sensitiveDecisions,
+    standardChoiceEntries,
+    sharedDropDownEntries,
+  ]);
 
   // Cascading on every keystroke would be wasteful (it touches every
   // record/child in the file), but relying solely on blur/Enter to commit
@@ -396,7 +482,7 @@ export default function Home() {
     }, 500);
   }, []);
 
-  const activeEntry = standardChoiceEntries.find((en) => en.path === activePath) ?? null;
+  const activeEntry = editableEntries.find((en) => en.path === activePath) ?? null;
   const gridThemeClass = theme === "dark" ? "ag-theme-quartz-dark" : "ag-theme-quartz";
 
   return (
@@ -497,15 +583,15 @@ export default function Home() {
           </optgroup>
         </select>
 
-        {standardChoiceEntries.length > 1 && (
+        {editableEntries.length > 1 && (
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            {standardChoiceEntries.map((en) => (
+            {editableEntries.map((en) => (
               <button
                 key={en.path}
                 className="btn"
                 onClick={() => {
                   setActivePath(en.path);
-                  setAgencyId(inferCommonAgencyId(en.records.map(toStandardChoiceRow)));
+                  setAgencyId(inferAgencyIdForEntry(en));
                 }}
                 style={
                   en.path === activePath
@@ -585,7 +671,7 @@ export default function Home() {
 
       <div className="main-area">
         {activeEntry ? (
-          <>
+          activeEntry.kind === "standardChoice" ? (
             <StandardChoiceGrid
               key={activeEntry.path}
               ref={gridRef}
@@ -594,11 +680,20 @@ export default function Home() {
               gridThemeClass={gridThemeClass}
               agencyId={agencyId}
             />
-          </>
+          ) : (
+            <SharedDropDownGrid
+              key={activeEntry.path}
+              ref={gridRef}
+              records={activeEntry.records}
+              onChange={handleDataChange}
+              gridThemeClass={gridThemeClass}
+              agencyId={agencyId}
+            />
+          )
         ) : (
           <div className="main-empty">
             {zipResult
-              ? "No Standard Choices file was recognized in this zip. Everything else will still be passed through untouched on export."
+              ? "No Standard Choices or Shared Drop-down List file was recognized in this zip. Everything else will still be passed through untouched on export."
               : "Upload or drag in a Configuration Manager export .zip, or start a blank file above, to begin."}
           </div>
         )}
