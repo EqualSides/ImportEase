@@ -48,6 +48,7 @@ export default function Home() {
   const [sensitiveDecisions, setSensitiveDecisions] = useState<Record<string, "keep" | "remove">>({});
   const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const gridRef = useRef<StandardChoiceGridHandle>(null);
+  const agencyDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     const stored = localStorage.getItem(THEME_STORAGE_KEY);
@@ -191,6 +192,16 @@ export default function Home() {
     setExporting(true);
     setError(null);
     try {
+      // Belt-and-suspenders: guarantee every record reflects the current
+      // Agency ID before building the export, regardless of whether the
+      // debounce timer has fired yet or blur/Enter already committed it.
+      // Idempotent if already applied.
+      if (agencyDebounceRef.current) {
+        clearTimeout(agencyDebounceRef.current);
+        agencyDebounceRef.current = null;
+      }
+      gridRef.current?.applyAgencyIdToAll(agencyId);
+
       const zipName = withZipExtension(exportZipName);
       const entries = zipResult.entries.filter((en) => sensitiveDecisions[en.path] !== "remove");
       const bytes = await exportZipInWorker(entries, zipName);
@@ -214,9 +225,31 @@ export default function Home() {
     }
   }, [zipResult, exportZipName, agencyId, undecidedSensitive, sensitiveDecisions]);
 
+  // Cascading on every keystroke would be wasteful (it touches every
+  // record/child in the file), but relying solely on blur/Enter to commit
+  // is fragile — a browser or automation context where a programmatic
+  // blur doesn't fire cleanly would silently leave existing records
+  // un-cascaded even though newly-added rows (driven by the `agencyId`
+  // prop, not this commit path) look right. Debounce-commit as a
+  // reliability backstop; blur/Enter still commit immediately for snappy
+  // feedback when they do fire, and handleExport also guarantees it as a
+  // last resort right before building the zip.
   const commitAgencyId = useCallback((value: string) => {
+    if (agencyDebounceRef.current) {
+      clearTimeout(agencyDebounceRef.current);
+      agencyDebounceRef.current = null;
+    }
     setAgencyId(value);
     gridRef.current?.applyAgencyIdToAll(value);
+  }, []);
+
+  const handleAgencyIdChange = useCallback((value: string) => {
+    setAgencyId(value);
+    if (agencyDebounceRef.current) clearTimeout(agencyDebounceRef.current);
+    agencyDebounceRef.current = setTimeout(() => {
+      agencyDebounceRef.current = null;
+      gridRef.current?.applyAgencyIdToAll(value);
+    }, 500);
   }, []);
 
   const passthroughCount = zipResult?.entries.filter((en) => en.kind === "passthrough").length ?? 0;
@@ -323,7 +356,7 @@ export default function Home() {
             <input
               className={`text-input${!agencyId.trim() ? " invalid" : ""}`}
               value={agencyId}
-              onChange={(e) => setAgencyId(e.target.value)}
+              onChange={(e) => handleAgencyIdChange(e.target.value)}
               onBlur={(e) => commitAgencyId(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
