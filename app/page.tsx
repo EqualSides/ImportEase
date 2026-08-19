@@ -1,21 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import StandardChoiceGrid from "@/components/StandardChoiceGrid";
-import { toStandardChoiceRow } from "@/lib/xml/standardChoice";
+import StandardChoiceGrid, { StandardChoiceGridHandle } from "@/components/StandardChoiceGrid";
+import { inferCommonAgencyId, toStandardChoiceRow } from "@/lib/xml/standardChoice";
 import type { ParseZipResult, StandardChoiceZipEntry } from "@/lib/types";
 
 const THEME_STORAGE_KEY = "importease-theme";
-
-function countMissingAgencyIds(entries: StandardChoiceZipEntry[]): number {
-  let count = 0;
-  for (const entry of entries) {
-    for (const record of entry.records) {
-      if (!toStandardChoiceRow(record).serviceProviderCode.trim()) count++;
-    }
-  }
-  return count;
-}
 
 function makeBlankStandardChoiceEntry(): StandardChoiceZipEntry {
   return {
@@ -32,6 +22,12 @@ function makeBlankStandardChoiceEntry(): StandardChoiceZipEntry {
   };
 }
 
+function withZipExtension(name: string): string {
+  const trimmed = name.trim();
+  if (!trimmed) return "export.zip";
+  return /\.zip$/i.test(trimmed) ? trimmed : `${trimmed}.zip`;
+}
+
 export default function Home() {
   const [zipResult, setZipResult] = useState<ParseZipResult | null>(null);
   const [activePath, setActivePath] = useState<string | null>(null);
@@ -40,11 +36,10 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [theme, setTheme] = useState<"dark" | "light">("dark");
   const [savedVisible, setSavedVisible] = useState(false);
-  // Bumped on every grid edit so the page re-renders and re-reads the
-  // (mutated-in-place) parsed data — zipResult's own reference never
-  // changes, since edits mutate the underlying PNode tree directly.
-  const [, setDataVersion] = useState(0);
+  const [exportZipName, setExportZipName] = useState("");
+  const [agencyId, setAgencyId] = useState("");
   const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const gridRef = useRef<StandardChoiceGridHandle>(null);
 
   useEffect(() => {
     const stored = localStorage.getItem(THEME_STORAGE_KEY);
@@ -64,36 +59,47 @@ export default function Home() {
   }, []);
 
   const handleDataChange = useCallback(() => {
-    setDataVersion((v) => v + 1);
     setSavedVisible(true);
     if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
     savedTimerRef.current = setTimeout(() => setSavedVisible(false), 1200);
   }, []);
 
-  const handleFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setLoading(true);
-    setError(null);
-    setZipResult(null);
-    setActivePath(null);
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
-      const res = await fetch("/api/parse", { method: "POST", body: formData });
-      const body = await res.json();
-      if (!res.ok) throw new Error(body.error || `Upload failed (${res.status})`);
-      const result = body as ParseZipResult;
-      setZipResult(result);
-      const firstStandardChoice = result.entries.find((en) => en.kind === "standardChoice");
-      setActivePath(firstStandardChoice?.path ?? null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Upload failed");
-    } finally {
-      setLoading(false);
-      e.target.value = "";
-    }
+  const loadEntries = useCallback((result: ParseZipResult) => {
+    setZipResult(result);
+    setExportZipName(result.zipName);
+    const firstStandardChoice = result.entries.find((en) => en.kind === "standardChoice") as
+      | StandardChoiceZipEntry
+      | undefined;
+    setActivePath(firstStandardChoice?.path ?? null);
+    setAgencyId(
+      firstStandardChoice ? inferCommonAgencyId(firstStandardChoice.records.map(toStandardChoiceRow)) : ""
+    );
   }, []);
+
+  const handleFileChange = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      setLoading(true);
+      setError(null);
+      setZipResult(null);
+      setActivePath(null);
+      try {
+        const formData = new FormData();
+        formData.append("file", file);
+        const res = await fetch("/api/parse", { method: "POST", body: formData });
+        const body = await res.json();
+        if (!res.ok) throw new Error(body.error || `Upload failed (${res.status})`);
+        loadEntries(body as ParseZipResult);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Upload failed");
+      } finally {
+        setLoading(false);
+        e.target.value = "";
+      }
+    },
+    [loadEntries]
+  );
 
   const handleNewFile = useCallback(
     (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -106,12 +112,10 @@ export default function Home() {
       ) {
         return;
       }
-      const blankEntry = makeBlankStandardChoiceEntry();
       setError(null);
-      setZipResult({ zipName: "new-export.zip", entries: [blankEntry] });
-      setActivePath(blankEntry.path);
+      loadEntries({ zipName: "new-export.zip", entries: [makeBlankStandardChoiceEntry()] });
     },
-    [zipResult]
+    [zipResult, loadEntries]
   );
 
   const standardChoiceEntries = (zipResult?.entries.filter(
@@ -120,18 +124,18 @@ export default function Home() {
 
   const handleExport = useCallback(async () => {
     if (!zipResult) return;
-    const missing = countMissingAgencyIds(standardChoiceEntries);
-    if (missing > 0) {
-      setError(`${missing} record(s) are missing an Agency ID — it's required before export.`);
+    if (!agencyId.trim()) {
+      setError("Agency ID is required before export — set it in the field above the grid.");
       return;
     }
     setExporting(true);
     setError(null);
     try {
+      const zipName = withZipExtension(exportZipName);
       const res = await fetch("/api/export", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ zipName: zipResult.zipName, entries: zipResult.entries }),
+        body: JSON.stringify({ zipName, entries: zipResult.entries }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
@@ -141,7 +145,7 @@ export default function Home() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = zipResult.zipName;
+      a.download = zipName;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -151,11 +155,15 @@ export default function Home() {
     } finally {
       setExporting(false);
     }
-  }, [zipResult, standardChoiceEntries]);
+  }, [zipResult, exportZipName, agencyId]);
+
+  const commitAgencyId = useCallback((value: string) => {
+    setAgencyId(value);
+    gridRef.current?.applyAgencyIdToAll(value);
+  }, []);
 
   const passthroughCount = zipResult?.entries.filter((en) => en.kind === "passthrough").length ?? 0;
   const activeEntry = standardChoiceEntries.find((en) => en.path === activePath) ?? null;
-  const missingAgencyCount = zipResult ? countMissingAgencyIds(standardChoiceEntries) : 0;
   const gridThemeClass = theme === "dark" ? "ag-theme-quartz-dark" : "ag-theme-quartz";
 
   return (
@@ -165,13 +173,6 @@ export default function Home() {
           <span className="dot" />
           ImportEase
         </div>
-
-        {zipResult && (
-          <div className="topbar-meta">
-            {zipResult.zipName} — {standardChoiceEntries.length} Standard Choice file(s),{" "}
-            {passthroughCount} passed through untouched
-          </div>
-        )}
 
         <div className="topbar-spacer" />
 
@@ -203,6 +204,42 @@ export default function Home() {
         </button>
       </div>
 
+      {zipResult && (
+        <div className="meta-bar">
+          <label className="field-label">
+            Export as
+            <input
+              className="text-input"
+              value={exportZipName}
+              onChange={(e) => setExportZipName(e.target.value)}
+              placeholder="export.zip"
+            />
+          </label>
+
+          <label className="field-label">
+            Agency ID
+            <input
+              className={`text-input${!agencyId.trim() ? " invalid" : ""}`}
+              value={agencyId}
+              onChange={(e) => setAgencyId(e.target.value)}
+              onBlur={(e) => commitAgencyId(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  commitAgencyId(agencyId);
+                  (e.target as HTMLInputElement).blur();
+                }
+              }}
+              placeholder="required"
+            />
+          </label>
+
+          <div className="topbar-meta">
+            {standardChoiceEntries.length} Standard Choice file(s), {passthroughCount} passed
+            through untouched
+          </div>
+        </div>
+      )}
+
       {loading && (
         <div className="parse-trace">
           <div className="sweep" />
@@ -210,11 +247,6 @@ export default function Home() {
       )}
 
       {error && <div className="error-banner">{error}</div>}
-      {!error && zipResult && missingAgencyCount > 0 && (
-        <div className="required-note" style={{ margin: "8px 20px 0" }}>
-          {missingAgencyCount} record(s) missing an Agency ID — required before export.
-        </div>
-      )}
 
       <div className="main-area">
         {activeEntry ? (
@@ -225,7 +257,10 @@ export default function Home() {
                   <button
                     key={en.path}
                     className="btn"
-                    onClick={() => setActivePath(en.path)}
+                    onClick={() => {
+                      setActivePath(en.path);
+                      setAgencyId(inferCommonAgencyId(en.records.map(toStandardChoiceRow)));
+                    }}
                     style={
                       en.path === activePath
                         ? { borderColor: "var(--accent-cyan)", color: "var(--accent-cyan)" }
@@ -239,9 +274,11 @@ export default function Home() {
             )}
             <StandardChoiceGrid
               key={activeEntry.path}
+              ref={gridRef}
               records={activeEntry.records}
               onChange={handleDataChange}
               gridThemeClass={gridThemeClass}
+              agencyId={agencyId}
             />
           </>
         ) : (

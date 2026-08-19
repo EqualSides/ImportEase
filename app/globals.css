@@ -148,7 +148,6 @@ button {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 14px;
   padding: 14px 20px;
 }
 
@@ -176,6 +175,78 @@ button {
   font-family: var(--font-mono), monospace;
   font-size: 12px;
   color: var(--text-muted);
+}
+
+/* Meta bar (export filename, Agency ID) --------------------------------- */
+
+.meta-bar {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--border-hairline);
+  background: var(--bg-panel);
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+
+.field-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+  font-family: var(--font-mono), monospace;
+}
+
+.text-input {
+  font-family: var(--font-mono), monospace;
+  font-size: 13px;
+  background: var(--bg-base);
+  color: var(--text-primary);
+  border: 1px solid var(--border-hairline);
+  border-radius: 5px;
+  padding: 5px 8px;
+  min-width: 160px;
+}
+
+.text-input:focus {
+  outline: none;
+  border-color: var(--accent-cyan);
+}
+
+.text-input.invalid {
+  border-color: var(--accent-amber);
+}
+
+/* Resize handle between the two grid panels ------------------------------ */
+
+.resize-handle {
+  flex-shrink: 0;
+  height: 12px;
+  margin: 4px 0;
+  cursor: row-resize;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.resize-handle::after {
+  content: "";
+  width: 44px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border-hairline);
+  transition: background-color 0.15s ease;
+}
+
+.resize-handle:hover::after {
+  background: var(--accent-cyan);
+}
+
+body.resizing-panels {
+  cursor: row-resize;
+  user-select: none;
 }
 
 /* Controls ------------------------------------------------------------ */

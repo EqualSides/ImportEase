@@ -343,6 +343,24 @@ export function toStandardChoiceValueRow(node: PNode): StandardChoiceValueRow {
   };
 }
 
+/** Most common non-empty Agency ID among a set of standardChoice rows. */
+export function inferCommonAgencyId(rows: StandardChoiceRow[]): string {
+  const counts = new Map<string, number>();
+  for (const r of rows) {
+    const v = r.serviceProviderCode.trim();
+    if (v) counts.set(v, (counts.get(v) ?? 0) + 1);
+  }
+  let best = "";
+  let bestCount = 0;
+  for (const [v, c] of counts) {
+    if (c > bestCount) {
+      best = v;
+      bestCount = c;
+    }
+  }
+  return best;
+}
+
 export function getNodeRefId(node: PNode): string {
   return getAttr(node, "refId") ?? "";
 }

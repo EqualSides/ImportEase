@@ -3,7 +3,15 @@
 import "ag-grid-community/styles/ag-grid.css";
 import "ag-grid-community/styles/ag-theme-quartz.css";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { AgGridReact } from "ag-grid-react";
 import type { CellValueChangedEvent, ColDef } from "ag-grid-community";
 import {
@@ -24,135 +32,223 @@ import {
   toStandardChoiceValueRow,
 } from "@/lib/xml/standardChoice";
 
+export interface StandardChoiceGridHandle {
+  /** Cascades a new Agency ID to every standardChoice record (and their child values) in this file. */
+  applyAgencyIdToAll: (value: string) => void;
+}
+
 interface Props {
   records: PNode[];
   onChange: () => void;
   gridThemeClass: string;
+  agencyId: string;
+}
+
+interface ColumnMeta {
+  field: string;
+  headerName: string;
+  editable: boolean;
+  hide?: boolean;
 }
 
 // `hide: true` (not omitting the column) keeps these fields selectable/
 // restorable later while matching Round 1's "hide, don't remove" ask — the
 // underlying data (still required for re-serialization + the round-trip
-// test) is untouched either way.
-const PARENT_COLUMNS: ColDef<StandardChoiceRow>[] = [
+// test) is untouched either way. Agency ID moved to a header-level field
+// (see StandardChoiceGridHandle) so it's hidden here too.
+const PARENT_COLUMN_META: ColumnMeta[] = [
   { field: "refId", headerName: "Ref ID", editable: false, hide: true },
-  { field: "name", headerName: "Name", editable: true, minWidth: 160 },
-  // Renamed for display only — the underlying/XML field stays
-  // `serviceProviderCode`, since that's Accela's actual schema tag name.
-  { field: "serviceProviderCode", headerName: "Agency ID", editable: true, minWidth: 130 },
-  { field: "defaultValue", headerName: "Default Value", editable: true, minWidth: 130 },
-  { field: "description", headerName: "Description", editable: true, minWidth: 160 },
-  { field: "type", headerName: "Type", editable: true, minWidth: 110 },
+  { field: "name", headerName: "Name", editable: true },
+  { field: "serviceProviderCode", headerName: "Agency ID", editable: true, hide: true },
+  { field: "defaultValue", headerName: "Default Value", editable: true },
+  { field: "description", headerName: "Description", editable: true },
+  { field: "type", headerName: "Type", editable: true },
   { field: "valueSize", headerName: "Value Size", editable: true, hide: true },
-  { field: "valueCount", headerName: "# Values", editable: false, minWidth: 90 },
+  { field: "valueCount", headerName: "# Values", editable: false },
 ];
 
-const PARENT_EDITABLE_FIELDS = PARENT_COLUMNS.filter((c) => c.editable).map(
-  (c) => c.field as string
-);
+const PARENT_EDITABLE_FIELDS = PARENT_COLUMN_META.filter((c) => c.editable).map((c) => c.field);
 
-const CHILD_COLUMNS: ColDef<StandardChoiceValueRow>[] = [
+const CHILD_COLUMN_META: ColumnMeta[] = [
   { field: "refId", headerName: "Ref ID", editable: false, hide: true },
-  { field: "value", headerName: "Value", editable: true, minWidth: 160 },
-  { field: "description", headerName: "Description", editable: true, minWidth: 160 },
-  { field: "sortOrder", headerName: "Sort Order", editable: true, minWidth: 110 },
+  { field: "value", headerName: "Value", editable: true },
+  { field: "description", headerName: "Description", editable: true },
+  { field: "sortOrder", headerName: "Sort Order", editable: true },
   { field: "sequenceNBR", headerName: "Sequence #", editable: true, hide: true },
   { field: "standardChoiceName", headerName: "Parent Name", editable: false, hide: true },
 ];
 
-const CHILD_EDITABLE_FIELDS = CHILD_COLUMNS.filter((c) => c.editable).map(
-  (c) => c.field as string
-);
+const CHILD_EDITABLE_FIELDS = CHILD_COLUMN_META.filter((c) => c.editable).map((c) => c.field);
 
-/** Most common non-empty Agency ID among existing rows — used to auto-populate new rows. */
-function inferCommonAgencyId(rows: StandardChoiceRow[]): string {
-  const counts = new Map<string, number>();
+// Column sizing is computed over the *entire* row dataset, not just what AG
+// Grid currently has rendered — its own autoSizeAllColumns() only measures
+// rendered rows, which under virtualization can leave a column too narrow
+// for a longer value that scrolls into view later (visible truncation).
+const CHAR_PX = 7.4;
+const COL_PADDING = 34;
+const COL_MIN = 70;
+const COL_MAX = 640;
+
+function widthForColumn(rows: any[], field: string, headerName: string): number {
+  let maxLen = headerName.length;
   for (const r of rows) {
-    const v = r.serviceProviderCode.trim();
-    if (v) counts.set(v, (counts.get(v) ?? 0) + 1);
+    const v = r[field];
+    const len = v == null ? 0 : String(v).length;
+    if (len > maxLen) maxLen = len;
   }
-  let best = "";
-  let bestCount = 0;
-  for (const [v, c] of counts) {
-    if (c > bestCount) {
-      best = v;
-      bestCount = c;
-    }
-  }
-  return best;
+  return Math.min(COL_MAX, Math.max(COL_MIN, Math.round(maxLen * CHAR_PX) + COL_PADDING));
+}
+
+function buildColumnDefs<T extends { uid: string }>(meta: ColumnMeta[], rows: T[]): ColDef<T>[] {
+  return meta.map((c) => ({
+    field: c.field,
+    headerName: c.headerName,
+    editable: c.editable,
+    hide: c.hide,
+    resizable: true,
+    width: c.hide ? undefined : widthForColumn(rows, c.field, c.headerName),
+  }));
 }
 
 /**
  * AG Grid Community edition does not include the Range Selection / Clipboard
  * modules (those are Enterprise-only), so bulk Excel-style paste is
  * implemented by hand here instead of relying on a built-in grid feature.
- * A cell must be focused (not necessarily selected as a range) for a paste
- * to be picked up; pasting extends the grid with new rows if the pasted
- * block runs past the current row count.
+ * Excel's own clipboard format for a copied range is tab-separated text,
+ * which is what this parses — copying real cells from Excel and pasting
+ * here works without any extra conversion step.
  */
-// Not a React hook (no "use" prefix on purpose) — a plain factory called fresh
-// on every render so it always closes over the latest row-state/callbacks.
-// Wrapping this in useCallback with a shallow dep array would let it go stale
-// across renders (e.g. after the selected parent row changes) since several
-// of the closures below (getRows/applyEdit/createRow) are themselves
-// recreated every render.
-function createPasteHandler<T extends { uid: string }>(opts: {
+interface PasteHandlerOpts<T extends { uid: string }> {
   gridApiRef: React.RefObject<any>;
   editableFields: string[];
   getRows: () => T[];
   setRows: (rows: T[]) => void;
   applyEdit: (uid: string, field: string, value: string) => T;
   createRow: () => T;
-}) {
+}
+
+/** Splits pasted/dropped text into a grid of cells and writes it starting at (startRowIndex, startFieldIndex). */
+function applyBlockToRows<T extends { uid: string }>(
+  opts: PasteHandlerOpts<T>,
+  text: string,
+  startRowIndex: number,
+  startFieldIndex: number
+) {
+  const lines = text.replace(/\r/g, "").split("\n");
+  while (lines.length && lines[lines.length - 1] === "") lines.pop();
+  if (!lines.length) return;
+
+  let currentRows = [...opts.getRows()];
+
+  lines.forEach((line, i) => {
+    // Tab-separated (Excel clipboard); fall back to comma-separated for a dropped .csv.
+    const cells = line.includes("\t") ? line.split("\t") : line.split(",");
+    const targetRowIndex = startRowIndex + i;
+    let targetRow = currentRows[targetRowIndex];
+    if (!targetRow) {
+      targetRow = opts.createRow();
+      currentRows = [...currentRows, targetRow];
+    }
+    cells.forEach((cellValue, j) => {
+      const field = opts.editableFields[startFieldIndex + j];
+      if (!field) return;
+      targetRow = opts.applyEdit(targetRow.uid, field, cellValue.trim());
+      currentRows = currentRows.map((r) => (r.uid === targetRow.uid ? targetRow : r));
+    });
+  });
+
+  opts.setRows(currentRows);
+}
+
+// Not a React hook (no "use" prefix on purpose) — a plain factory called fresh
+// on every render so it always closes over the latest row-state/callbacks.
+// Wrapping this in useCallback with a shallow dep array would let it go stale
+// across renders (e.g. after the selected parent row changes) since several
+// of the closures below (getRows/applyEdit/createRow) are themselves
+// recreated every render.
+//
+// A focused cell (if any) sets the paste target; with nothing focused —
+// including an empty grid, or a click that landed outside any cell — it
+// appends starting at the first editable column, so paste always does
+// something useful rather than silently no-op'ing.
+function createPasteHandler<T extends { uid: string }>(opts: PasteHandlerOpts<T>) {
   return (e: React.ClipboardEvent<HTMLDivElement>) => {
     const api = opts.gridApiRef.current?.api;
-    if (!api) return;
-    if (api.getEditingCells().length > 0) return; // let native single-cell paste happen
+    if (api?.getEditingCells().length > 0) return; // let native single-cell paste happen
 
-    const focused = api.getFocusedCell();
-    if (!focused) return;
     const text = e.clipboardData.getData("text/plain");
     if (!text) return;
 
-    const startFieldIndex = opts.editableFields.indexOf(focused.column.getColId());
-    if (startFieldIndex === -1) return;
+    const focused = api?.getFocusedCell();
+    const startFieldIndex = focused
+      ? Math.max(0, opts.editableFields.indexOf(focused.column.getColId()))
+      : 0;
+    const startRowIndex = focused ? focused.rowIndex ?? 0 : opts.getRows().length;
 
     e.preventDefault();
-
-    const lines = text.replace(/\r/g, "").split("\n");
-    while (lines.length && lines[lines.length - 1] === "") lines.pop();
-    if (!lines.length) return;
-
-    let currentRows = [...opts.getRows()];
-    const startRowIndex = focused.rowIndex ?? 0;
-
-    lines.forEach((line, i) => {
-      const cells = line.split("\t");
-      const targetRowIndex = startRowIndex + i;
-      let targetRow = currentRows[targetRowIndex];
-      if (!targetRow) {
-        targetRow = opts.createRow();
-        currentRows = [...currentRows, targetRow];
-      }
-      cells.forEach((cellValue, j) => {
-        const field = opts.editableFields[startFieldIndex + j];
-        if (!field) return;
-        targetRow = opts.applyEdit(targetRow.uid, field, cellValue);
-        currentRows = currentRows.map((r) => (r.uid === targetRow.uid ? targetRow : r));
-      });
-    });
-
-    opts.setRows(currentRows);
+    try {
+      applyBlockToRows(opts, text, startRowIndex, startFieldIndex);
+    } catch {
+      window.alert("Select (or add) a Standard Choice row above before pasting values here.");
+    }
   };
 }
 
-export default function StandardChoiceGrid({ records, onChange, gridThemeClass }: Props) {
+/**
+ * Dropping a plain-text/CSV/TSV file onto the grid section appends its rows
+ * the same way a paste would. A real .xlsx is a binary zip container, not
+ * text — reading it as text would silently corrupt the data, so that case
+ * is rejected with a message rather than attempted (parsing it properly
+ * would need a new xlsx library, which isn't wired up yet).
+ */
+function createDropHandler<T extends { uid: string }>(opts: PasteHandlerOpts<T>) {
+  return (e: React.DragEvent<HTMLDivElement>) => {
+    const file = e.dataTransfer.files?.[0];
+    if (!file) return;
+    e.preventDefault();
+
+    const looksBinaryExcel = /\.xlsx$|\.xls$/i.test(file.name);
+    if (looksBinaryExcel) {
+      window.alert(
+        `"${file.name}" is an Excel workbook file — this only reads plain text/CSV drops. Open it in Excel, copy the cells, and paste them into the grid instead.`
+      );
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const text = String(reader.result ?? "");
+      if (!text.trim()) return;
+      try {
+        applyBlockToRows(opts, text, opts.getRows().length, 0);
+      } catch {
+        window.alert("Select (or add) a Standard Choice row above before dropping values here.");
+      }
+    };
+    reader.readAsText(file);
+  };
+}
+
+// Panel sizing constants — kept explicit (rather than reading Quartz theme
+// defaults) so the "fit the last row" math is exact rather than guessed.
+const ROW_HEIGHT = 36;
+const HEADER_HEIGHT = 38;
+const PANEL_CHROME = 74; // toolbar + panel padding/border
+const MIN_PANEL_PX = 160;
+const HANDLE_PX = 14;
+
+function naturalPanelHeight(rowCount: number): number {
+  return PANEL_CHROME + HEADER_HEIGHT + Math.max(rowCount, 1) * ROW_HEIGHT;
+}
+
+const StandardChoiceGrid = forwardRef<StandardChoiceGridHandle, Props>(function StandardChoiceGrid(
+  { records, onChange, gridThemeClass, agencyId },
+  ref
+) {
   const [parentRows, setParentRows] = useState<StandardChoiceRow[]>(() =>
     records.map(toStandardChoiceRow)
   );
-  const [selectedUid, setSelectedUid] = useState<string | null>(
-    parentRows[0]?.uid ?? null
-  );
+  const [selectedUid, setSelectedUid] = useState<string | null>(parentRows[0]?.uid ?? null);
 
   const selectedNode = useMemo(
     () => (selectedUid ? findStandardChoiceByUid(records, selectedUid) ?? null : null),
@@ -168,8 +264,70 @@ export default function StandardChoiceGrid({ records, onChange, gridThemeClass }
   const pendingParentFocusUid = useRef<string | null>(null);
   const pendingChildFocusUid = useRef<string | null>(null);
 
+  // --- Top-panel auto-fit + drag-resize -------------------------------
+  const stackRef = useRef<HTMLDivElement>(null);
+  const [topPanelHeight, setTopPanelHeight] = useState<number | null>(null);
+  const userResizedRef = useRef(false);
+  const dragRef = useRef<{ startY: number; startHeight: number } | null>(null);
+
+  const recomputeTopHeight = useCallback(() => {
+    if (userResizedRef.current) return;
+    const stack = stackRef.current;
+    const available = stack ? stack.clientHeight : 700;
+    const cap = Math.max(MIN_PANEL_PX, available - HANDLE_PX - MIN_PANEL_PX);
+    const soft = Math.max(MIN_PANEL_PX, available * 0.7);
+    setTopPanelHeight(Math.min(naturalPanelHeight(parentRows.length), soft, cap));
+  }, [parentRows.length]);
+
   useEffect(() => {
-    parentGridRef.current?.api?.autoSizeAllColumns();
+    recomputeTopHeight();
+  }, [recomputeTopHeight]);
+
+  useEffect(() => {
+    const onResize = () => recomputeTopHeight();
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [recomputeTopHeight]);
+
+  const onHandleMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    dragRef.current = { startY: e.clientY, startHeight: topPanelHeight ?? 240 };
+    document.body.classList.add("resizing-panels");
+
+    const onMove = (ev: MouseEvent) => {
+      const drag = dragRef.current;
+      const stack = stackRef.current;
+      if (!drag || !stack) return;
+      const available = stack.clientHeight;
+      const delta = ev.clientY - drag.startY;
+      const next = Math.min(
+        Math.max(drag.startHeight + delta, MIN_PANEL_PX),
+        Math.max(MIN_PANEL_PX, available - HANDLE_PX - MIN_PANEL_PX)
+      );
+      userResizedRef.current = true;
+      setTopPanelHeight(next);
+    };
+    const onUp = () => {
+      dragRef.current = null;
+      document.body.classList.remove("resizing-panels");
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }, [topPanelHeight]);
+
+  // --- Column defs (recomputed over the full dataset, not just what's rendered) ---
+  const parentColumnDefs = useMemo(
+    () => buildColumnDefs<StandardChoiceRow>(PARENT_COLUMN_META, parentRows),
+    [parentRows]
+  );
+  const childColumnDefs = useMemo(
+    () => buildColumnDefs<StandardChoiceValueRow>(CHILD_COLUMN_META, childRows),
+    [childRows]
+  );
+
+  useEffect(() => {
     const uid = pendingParentFocusUid.current;
     pendingParentFocusUid.current = null;
     if (!uid) return;
@@ -183,7 +341,6 @@ export default function StandardChoiceGrid({ records, onChange, gridThemeClass }
   }, [parentRows]);
 
   useEffect(() => {
-    childGridRef.current?.api?.autoSizeAllColumns();
     const uid = pendingChildFocusUid.current;
     pendingChildFocusUid.current = null;
     if (!uid) return;
@@ -209,6 +366,24 @@ export default function StandardChoiceGrid({ records, onChange, gridThemeClass }
     const rowNode = api?.getRowNode(uid);
     if (api && rowNode) api.flashCells({ rowNodes: [rowNode], columns: [field] });
   }, []);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      applyAgencyIdToAll: (value: string) => {
+        for (const node of records) {
+          setStandardChoiceField(node, "serviceProviderCode", value);
+          for (const valueNode of getStandardChoiceValueNodes(node)) {
+            setStandardChoiceValueField(valueNode, "serviceProviderCode", value);
+          }
+        }
+        setParentRows(records.map(toStandardChoiceRow));
+        if (selectedNode) refreshChildRows(selectedNode);
+        onChange();
+      },
+    }),
+    [records, selectedNode, refreshChildRows, onChange]
+  );
 
   const onSelectionChanged = useCallback(() => {
     const selected = parentGridRef.current?.api.getSelectedRows() ?? [];
@@ -251,13 +426,13 @@ export default function StandardChoiceGrid({ records, onChange, gridThemeClass }
 
   const addParentRow = useCallback(() => {
     const num = nextRefIdNumber(records, "StandardChoiceModel");
-    const node = createStandardChoiceNode(num, inferCommonAgencyId(parentRows));
+    const node = createStandardChoiceNode(num, agencyId);
     records.push(node);
     const row = toStandardChoiceRow(node);
     pendingParentFocusUid.current = row.uid;
     setParentRows((prev) => [...prev, row]);
     onChange();
-  }, [records, parentRows, onChange]);
+  }, [records, agencyId, onChange]);
 
   const deleteSelectedParentRows = useCallback(() => {
     const selected = (parentGridRef.current?.api.getSelectedRows() ?? []) as StandardChoiceRow[];
@@ -313,12 +488,12 @@ export default function StandardChoiceGrid({ records, onChange, gridThemeClass }
 
   const parentCreateRow = useCallback(() => {
     const num = nextRefIdNumber(records, "StandardChoiceModel");
-    const node = createStandardChoiceNode(num, inferCommonAgencyId(parentRows));
+    const node = createStandardChoiceNode(num, agencyId);
     records.push(node);
     return toStandardChoiceRow(node);
-  }, [records, parentRows]);
+  }, [records, agencyId]);
 
-  const handleParentPaste = createPasteHandler<StandardChoiceRow>({
+  const parentPasteOpts: PasteHandlerOpts<StandardChoiceRow> = {
     gridApiRef: parentGridRef,
     editableFields: PARENT_EDITABLE_FIELDS,
     getRows: () => parentRows,
@@ -328,7 +503,9 @@ export default function StandardChoiceGrid({ records, onChange, gridThemeClass }
     },
     applyEdit: parentApplyEdit,
     createRow: parentCreateRow,
-  });
+  };
+  const handleParentPaste = createPasteHandler(parentPasteOpts);
+  const handleParentDrop = createDropHandler(parentPasteOpts);
 
   const childApplyEdit = useCallback(
     (uid: string, field: string, value: string) => {
@@ -350,7 +527,7 @@ export default function StandardChoiceGrid({ records, onChange, gridThemeClass }
     return toStandardChoiceValueRow(node);
   }, [records, selectedNode]);
 
-  const handleChildPaste = createPasteHandler<StandardChoiceValueRow>({
+  const childPasteOpts: PasteHandlerOpts<StandardChoiceValueRow> = {
     gridApiRef: childGridRef,
     editableFields: CHILD_EDITABLE_FIELDS,
     getRows: () => childRows,
@@ -361,11 +538,16 @@ export default function StandardChoiceGrid({ records, onChange, gridThemeClass }
     },
     applyEdit: childApplyEdit,
     createRow: childCreateRow,
-  });
+  };
+  const handleChildPaste = createPasteHandler(childPasteOpts);
+  const handleChildDrop = createDropHandler(childPasteOpts);
 
   return (
-    <div className="grid-stack">
-      <div className="grid-panel">
+    <div className="grid-stack" ref={stackRef}>
+      <div
+        className="grid-panel"
+        style={{ flex: "0 0 auto", height: topPanelHeight ?? undefined, minHeight: MIN_PANEL_PX }}
+      >
         <div className="grid-toolbar">
           <button className="btn" onClick={addParentRow}>
             + Add Standard Choice
@@ -375,22 +557,31 @@ export default function StandardChoiceGrid({ records, onChange, gridThemeClass }
           </button>
           <span className="grid-toolbar-label">Standard Choices ({parentRows.length})</span>
         </div>
-        <div className={gridThemeClass} style={{ flex: 1, width: "100%", minHeight: 0 }} onPaste={handleParentPaste}>
+        <div
+          className={gridThemeClass}
+          style={{ flex: 1, width: "100%", minHeight: 0 }}
+          onPaste={handleParentPaste}
+          onDrop={handleParentDrop}
+          onDragOver={(e) => e.preventDefault()}
+        >
           <AgGridReact<StandardChoiceRow>
             ref={parentGridRef}
             rowData={parentRows}
-            columnDefs={PARENT_COLUMNS}
+            columnDefs={parentColumnDefs}
+            rowHeight={ROW_HEIGHT}
+            headerHeight={HEADER_HEIGHT}
             getRowId={(p) => p.data.uid}
             rowSelection="single"
             onSelectionChanged={onSelectionChanged}
             onCellValueChanged={onParentCellValueChanged}
-            onFirstDataRendered={(e) => e.api.autoSizeAllColumns()}
             stopEditingWhenCellsLoseFocus
           />
         </div>
       </div>
 
-      <div className="grid-panel">
+      <div className="resize-handle" onMouseDown={onHandleMouseDown} title="Drag to resize" />
+
+      <div className="grid-panel" style={{ flex: 1, minHeight: MIN_PANEL_PX }}>
         <div className="grid-toolbar">
           <button className="btn" onClick={addChildRow} disabled={!selectedNode}>
             + Add Value
@@ -404,19 +595,28 @@ export default function StandardChoiceGrid({ records, onChange, gridThemeClass }
               : "Select a Standard Choice above to see its values"}
           </span>
         </div>
-        <div className={gridThemeClass} style={{ flex: 1, width: "100%", minHeight: 0 }} onPaste={handleChildPaste}>
+        <div
+          className={gridThemeClass}
+          style={{ flex: 1, width: "100%", minHeight: 0 }}
+          onPaste={handleChildPaste}
+          onDrop={handleChildDrop}
+          onDragOver={(e) => e.preventDefault()}
+        >
           <AgGridReact<StandardChoiceValueRow>
             ref={childGridRef}
             rowData={childRows}
-            columnDefs={CHILD_COLUMNS}
+            columnDefs={childColumnDefs}
+            rowHeight={ROW_HEIGHT}
+            headerHeight={HEADER_HEIGHT}
             getRowId={(p) => p.data.uid}
             rowSelection="multiple"
             onCellValueChanged={onChildCellValueChanged}
-            onFirstDataRendered={(e) => e.api.autoSizeAllColumns()}
             stopEditingWhenCellsLoseFocus
           />
         </div>
       </div>
     </div>
   );
-}
+});
+
+export default StandardChoiceGrid;
