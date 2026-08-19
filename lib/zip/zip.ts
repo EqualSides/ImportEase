@@ -44,8 +44,8 @@ export async function parseUploadedZip(
       }
     }
 
-    const base64 = await file.async("base64");
-    entries.push({ path, kind: "passthrough", base64 });
+    const bytes = await file.async("uint8array");
+    entries.push({ path, kind: "passthrough", bytes });
   }
 
   return { zipName, entries };
@@ -59,7 +59,7 @@ export async function buildExportZip(entries: ZipEntryData[]): Promise<Uint8Arra
       const xml = buildExportedXml({ listAttrs: entry.listAttrs, records: entry.records });
       zip.file(entry.path, xml);
     } else {
-      zip.file(entry.path, entry.base64, { base64: true });
+      zip.file(entry.path, entry.bytes);
     }
   }
   return zip.generateAsync({ type: "uint8array" });

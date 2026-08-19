@@ -19,22 +19,48 @@ Vercel, since this environment has no local Node.js to verify with directly.
 
 ## How it works
 
-- `app/api/parse` — accepts an uploaded `.zip`, unzips in memory, and for
-  each `.xml` entry sniffs the *content* (not the filename — real exports
-  aren't necessarily named `StandardChoiceModel.xml`) for a `StandardChoice`
-  shape. Recognized files are parsed into JSON; everything else is passed
-  through untouched as base64.
+Everything — zip upload, unzip, XML parse, grid edit, XML re-serialize,
+re-zip — happens **entirely client-side**, in a Web Worker. There is no
+server involved in the file-processing path at all:
+
+- Vercel serverless functions have a hard 4.5MB request body limit that
+  cannot be raised, and real full-agency exports run well past that (a
+  47.8MB `ASIGroupModel.xml` has been seen in a real sample). Any upload
+  flow that sends the file to a Next.js API route breaks on real customer
+  data even though it works fine on small test fixtures. The original
+  Milestone 1 build did route through `app/api/parse`/`app/api/export`;
+  those are gone now, replaced by the worker.
+- `lib/worker/importWorker.ts` runs the parse/zip/serialize work off the
+  main thread — the whole reason for a worker rather than doing this
+  directly in `app/page.tsx` is that this work can take real time on a
+  40MB+ file, and a fixed 4.5MB-safe UI would otherwise freeze for that
+  duration. `lib/worker/client.ts` wraps it in a small promise-based API
+  (`parseZipInWorker`, `exportZipInWorker`) so the rest of the app doesn't
+  deal with `postMessage` directly.
 - Everything from that point lives in browser memory only (`app/page.tsx`
   state) — no database, no server-side session, per the brief's
-  no-persistence requirement. The browser tab *is* the session.
+  no-persistence requirement, and now genuinely reinforced by architecture
+  rather than just policy: the file never leaves the browser, so there's
+  nothing to accidentally persist server-side in the first place.
+- `lib/zip/zip.ts` sniffs each `.xml` entry's *content* (not filename —
+  real exports aren't necessarily named `StandardChoiceModel.xml`) for a
+  `StandardChoice` shape. Recognized files are parsed into JSON;
+  everything else (including `WorkflowModel.xml` — its mxGraph/drawio-style
+  embedded diagram is confirmed out of scope for grid-editing) is passed
+  through untouched as raw bytes, not base64 — base64 would add ~33%
+  overhead on large files with nothing to gain now that there's no
+  JSON-over-HTTP boundary requiring a text-safe encoding.
+- `lib/sensitiveFiles.ts` + the confirmation panel in `app/page.tsx` —
+  before export, any detected `UserModel.xml`/`UserProfilesModel.xml`/
+  `AgencyGroupModel.xml` (the list is meant to grow) blocks export until
+  the user explicitly chooses Keep or Remove for each one. Recomputed
+  fresh from the current entries at export time, not a one-time flag from
+  upload, so it also covers the blank-file flow.
 - `components/StandardChoiceGrid.tsx` — two linked AG Grid Community grids
   (parent `standardChoice` rows, child `standardChoiceValue` rows for the
   selected parent). AG Grid's Range Selection/Clipboard and Master-Detail
   modules are Enterprise-only, so bulk Excel-style paste and the
   parent/child linkage are hand-rolled here instead.
-- `app/api/export` — takes the (possibly edited) JSON back, re-serializes
-  each `StandardChoice` entry to XML and re-zips everything with the
-  original entry paths.
 - `lib/xml/standardChoice.ts` — the parse/serialize core. Parses in
   fast-xml-parser's order-preserving mode so every record's original field
   order and any undocumented fields (e.g. `valueSize` on a `standardChoice`,

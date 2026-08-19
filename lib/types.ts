@@ -10,7 +10,11 @@ export interface StandardChoiceZipEntry {
 export interface PassthroughZipEntry {
   path: string;
   kind: "passthrough";
-  base64: string;
+  // Raw bytes, not base64: everything now stays client-side (see
+  // lib/worker/), so there's no JSON-over-HTTP boundary that needs a
+  // text-safe encoding — and base64 would add ~33% overhead on the large
+  // files (40MB+) this app needs to handle.
+  bytes: Uint8Array;
 }
 
 export type ZipEntryData = StandardChoiceZipEntry | PassthroughZipEntry;

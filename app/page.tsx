@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import StandardChoiceGrid, { StandardChoiceGridHandle } from "@/components/StandardChoiceGrid";
 import { inferCommonAgencyId, toStandardChoiceRow } from "@/lib/xml/standardChoice";
+import { detectSensitiveEntries } from "@/lib/sensitiveFiles";
+import { exportZipInWorker, parseZipInWorker } from "@/lib/worker/client";
 import type { ParseZipResult, StandardChoiceZipEntry } from "@/lib/types";
 
 const THEME_STORAGE_KEY = "importease-theme";
@@ -38,6 +40,12 @@ export default function Home() {
   const [savedVisible, setSavedVisible] = useState(false);
   const [exportZipName, setExportZipName] = useState("");
   const [agencyId, setAgencyId] = useState("");
+  // Per-file Keep/Remove choice for detected sensitive files (User/Group/
+  // Security data) — required before export, see architecture-and-safety-
+  // update.md. Keyed by entry path; re-derived fresh from zipResult.entries
+  // on every render (not a one-time flag from parse) so it also applies if
+  // a blank-file session somehow ends up including one of these files.
+  const [sensitiveDecisions, setSensitiveDecisions] = useState<Record<string, "keep" | "remove">>({});
   const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const gridRef = useRef<StandardChoiceGridHandle>(null);
 
@@ -67,6 +75,7 @@ export default function Home() {
   const loadEntries = useCallback((result: ParseZipResult) => {
     setZipResult(result);
     setExportZipName(result.zipName);
+    setSensitiveDecisions({});
     const firstStandardChoice = result.entries.find((en) => en.kind === "standardChoice") as
       | StandardChoiceZipEntry
       | undefined;
@@ -87,12 +96,7 @@ export default function Home() {
       setZipResult(null);
       setActivePath(null);
       try {
-        const formData = new FormData();
-        formData.append("file", file);
-        const res = await fetch("/api/parse", { method: "POST", body: formData });
-        const body = await res.json();
-        if (!res.ok) throw new Error(body.error || `Upload failed (${res.status})`);
-        loadEntries(body as ParseZipResult);
+        loadEntries(await parseZipInWorker(file));
       } catch (err) {
         setError(err instanceof Error ? err.message : "Upload failed");
       } finally {
@@ -165,26 +169,32 @@ export default function Home() {
     (en) => en.kind === "standardChoice"
   ) ?? []) as StandardChoiceZipEntry[];
 
+  const sensitiveMatches = zipResult
+    ? detectSensitiveEntries(zipResult.entries.map((en) => en.path))
+    : [];
+  const undecidedSensitive = sensitiveMatches.filter((m) => !sensitiveDecisions[m.path]);
+
+  const decideSensitive = useCallback((path: string, decision: "keep" | "remove") => {
+    setSensitiveDecisions((prev) => ({ ...prev, [path]: decision }));
+  }, []);
+
   const handleExport = useCallback(async () => {
     if (!zipResult) return;
     if (!agencyId.trim()) {
       setError("Agency ID is required before export — set it in the field above the grid.");
       return;
     }
+    if (undecidedSensitive.length > 0) {
+      setError("Decide Keep or Remove for every flagged file below before export.");
+      return;
+    }
     setExporting(true);
     setError(null);
     try {
       const zipName = withZipExtension(exportZipName);
-      const res = await fetch("/api/export", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ zipName, entries: zipResult.entries }),
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error || `Export failed (${res.status})`);
-      }
-      const blob = await res.blob();
+      const entries = zipResult.entries.filter((en) => sensitiveDecisions[en.path] !== "remove");
+      const bytes = await exportZipInWorker(entries, zipName);
+      const blob = new Blob([bytes], { type: "application/zip" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -198,7 +208,7 @@ export default function Home() {
     } finally {
       setExporting(false);
     }
-  }, [zipResult, exportZipName, agencyId]);
+  }, [zipResult, exportZipName, agencyId, undecidedSensitive, sensitiveDecisions]);
 
   const commitAgencyId = useCallback((value: string) => {
     setAgencyId(value);
@@ -252,11 +262,45 @@ export default function Home() {
         <button
           className="btn btn-primary"
           onClick={handleExport}
-          disabled={!zipResult || exporting}
+          disabled={!zipResult || exporting || undecidedSensitive.length > 0}
         >
           {exporting ? "Building zip…" : "Export .zip"}
         </button>
       </div>
+
+      {sensitiveMatches.length > 0 && (
+        <div className="sensitive-gate">
+          <div className="sensitive-gate-header">
+            ⚠ This zip includes files that carry user accounts or security/permission data.
+            Decide what happens to each one before you can export.
+          </div>
+          {sensitiveMatches.map((m) => {
+            const decision = sensitiveDecisions[m.path];
+            return (
+              <div className="sensitive-gate-row" key={m.path}>
+                <div className="sensitive-gate-file">
+                  <span className="sensitive-gate-path">{m.path}</span>
+                  <span className="sensitive-gate-reason">{m.reason}</span>
+                </div>
+                <div className="sensitive-gate-actions">
+                  <button
+                    className={`btn${decision === "keep" ? " btn-choice-active" : ""}`}
+                    onClick={() => decideSensitive(m.path, "keep")}
+                  >
+                    Keep
+                  </button>
+                  <button
+                    className={`btn btn-danger${decision === "remove" ? " btn-choice-active" : ""}`}
+                    onClick={() => decideSensitive(m.path, "remove")}
+                  >
+                    Remove
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {zipResult && (
         <div className="meta-bar">
