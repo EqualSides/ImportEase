@@ -273,6 +273,7 @@ const StandardChoiceGrid = forwardRef<StandardChoiceGridHandle, Props>(function 
   // --- Top-panel auto-fit + drag-resize -------------------------------
   const stackRef = useRef<HTMLDivElement>(null);
   const [topPanelHeight, setTopPanelHeight] = useState<number | null>(null);
+  const [topPanelCollapsed, setTopPanelCollapsed] = useState(false);
   const userResizedRef = useRef(false);
   const dragRef = useRef<{ startY: number; startHeight: number } | null>(null);
 
@@ -552,40 +553,63 @@ const StandardChoiceGrid = forwardRef<StandardChoiceGridHandle, Props>(function 
     <div className="grid-stack" ref={stackRef}>
       <div
         className="grid-panel"
-        style={{ flex: "0 0 auto", height: topPanelHeight ?? undefined, minHeight: MIN_PANEL_PX }}
+        style={
+          topPanelCollapsed
+            ? { flex: "0 0 auto" }
+            : { flex: "0 0 auto", height: topPanelHeight ?? undefined, minHeight: MIN_PANEL_PX }
+        }
       >
         <div className="grid-toolbar">
+          <button
+            className="btn icon-btn"
+            onClick={() => setTopPanelCollapsed((c) => !c)}
+            title={topPanelCollapsed ? "Expand Standard Choices" : "Collapse Standard Choices"}
+          >
+            {topPanelCollapsed ? "▸" : "▾"}
+          </button>
           <button className="btn" onClick={addParentRow}>
             + Add Standard Choice
           </button>
           <button className="btn btn-danger" onClick={deleteSelectedParentRows}>
             Delete Selected
           </button>
-          <span className="grid-toolbar-label">Standard Choices ({parentRows.length})</span>
+          <span className="grid-toolbar-label">
+            Standard Choices ({parentRows.length})
+            {topPanelCollapsed && selectedNode && (
+              <>
+                {" — "}
+                <strong>{toStandardChoiceRow(selectedNode).name || "(unnamed)"}</strong>
+              </>
+            )}
+          </span>
         </div>
-        <div
-          className={gridThemeClass}
-          style={{ flex: 1, width: "100%", minHeight: 0 }}
-          onPaste={handleParentPaste}
-          onDrop={handleParentDrop}
-          onDragOver={(e) => e.preventDefault()}
-        >
-          <AgGridReact<StandardChoiceRow>
-            ref={parentGridRef}
-            rowData={parentRows}
-            columnDefs={parentColumnDefs}
-            rowHeight={ROW_HEIGHT}
-            headerHeight={HEADER_HEIGHT}
-            getRowId={(p) => p.data.uid}
-            rowSelection="single"
-            onSelectionChanged={onSelectionChanged}
-            onCellValueChanged={onParentCellValueChanged}
-            stopEditingWhenCellsLoseFocus
-          />
-        </div>
+        {!topPanelCollapsed && (
+          <div
+            className={gridThemeClass}
+            style={{ flex: 1, width: "100%", minHeight: 0 }}
+            onPaste={handleParentPaste}
+            onDrop={handleParentDrop}
+            onDragOver={(e) => e.preventDefault()}
+          >
+            <AgGridReact<StandardChoiceRow>
+              ref={parentGridRef}
+              rowData={parentRows}
+              columnDefs={parentColumnDefs}
+              rowHeight={ROW_HEIGHT}
+              headerHeight={HEADER_HEIGHT}
+              getRowId={(p) => p.data.uid}
+              rowSelection="single"
+              onSelectionChanged={onSelectionChanged}
+              onCellValueChanged={onParentCellValueChanged}
+              stopEditingWhenCellsLoseFocus
+            />
+          </div>
+        )}
       </div>
 
-      <div className="resize-handle" onMouseDown={onHandleMouseDown} title="Drag to resize" />
+      {!topPanelCollapsed && (
+        <div className="resize-handle" onMouseDown={onHandleMouseDown} title="Drag to resize" />
+      )}
 
       <div className="grid-panel" style={{ flex: 1, minHeight: MIN_PANEL_PX }}>
         <div className="grid-toolbar">

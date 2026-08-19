@@ -404,6 +404,28 @@ export default function Home() {
           {theme === "dark" ? "☀" : "☾"}
         </button>
 
+        {standardChoiceEntries.length > 1 && (
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {standardChoiceEntries.map((en) => (
+              <button
+                key={en.path}
+                className="btn"
+                onClick={() => {
+                  setActivePath(en.path);
+                  setAgencyId(inferCommonAgencyId(en.records.map(toStandardChoiceRow)));
+                }}
+                style={
+                  en.path === activePath
+                    ? { borderColor: "var(--accent-cyan)", color: "var(--accent-cyan)" }
+                    : undefined
+                }
+              >
+                {en.path}
+              </button>
+            ))}
+          </div>
+        )}
+
         <button
           className="btn btn-primary"
           onClick={handleExport}
@@ -459,27 +481,6 @@ export default function Home() {
       <div className="main-area">
         {activeEntry ? (
           <>
-            {standardChoiceEntries.length > 1 && (
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", padding: "6px 20px 0" }}>
-                {standardChoiceEntries.map((en) => (
-                  <button
-                    key={en.path}
-                    className="btn"
-                    onClick={() => {
-                      setActivePath(en.path);
-                      setAgencyId(inferCommonAgencyId(en.records.map(toStandardChoiceRow)));
-                    }}
-                    style={
-                      en.path === activePath
-                        ? { borderColor: "var(--accent-cyan)", color: "var(--accent-cyan)" }
-                        : undefined
-                    }
-                  >
-                    {en.path}
-                  </button>
-                ))}
-              </div>
-            )}
             <StandardChoiceGrid
               key={activeEntry.path}
               ref={gridRef}
