@@ -3,7 +3,7 @@
 import "ag-grid-community/styles/ag-grid.css";
 import "ag-grid-community/styles/ag-theme-quartz.css";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AgGridReact } from "ag-grid-react";
 import type { CellValueChangedEvent, ColDef } from "ag-grid-community";
 import {
@@ -14,7 +14,8 @@ import {
   createStandardChoiceValueNode,
   deleteStandardChoice,
   deleteStandardChoiceValue,
-  getNodeRefId,
+  findStandardChoiceByUid,
+  findStandardChoiceValueByUid,
   getStandardChoiceValueNodes,
   nextRefIdNumber,
   setStandardChoiceField,
@@ -26,17 +27,24 @@ import {
 interface Props {
   records: PNode[];
   onChange: () => void;
+  gridThemeClass: string;
 }
 
+// `hide: true` (not omitting the column) keeps these fields selectable/
+// restorable later while matching Round 1's "hide, don't remove" ask — the
+// underlying data (still required for re-serialization + the round-trip
+// test) is untouched either way.
 const PARENT_COLUMNS: ColDef<StandardChoiceRow>[] = [
-  { field: "refId", headerName: "Ref ID", editable: false, width: 170, pinned: "left" },
-  { field: "name", editable: true, flex: 1, minWidth: 200 },
-  { field: "serviceProviderCode", headerName: "Service Provider", editable: true, width: 160 },
-  { field: "defaultValue", headerName: "Default Value", editable: true, width: 140 },
-  { field: "description", editable: true, flex: 1, minWidth: 200 },
-  { field: "type", editable: true, width: 130 },
-  { field: "valueSize", headerName: "Value Size", editable: true, width: 110 },
-  { field: "valueCount", headerName: "# Values", editable: false, width: 100 },
+  { field: "refId", headerName: "Ref ID", editable: false, hide: true },
+  { field: "name", headerName: "Name", editable: true, minWidth: 160 },
+  // Renamed for display only — the underlying/XML field stays
+  // `serviceProviderCode`, since that's Accela's actual schema tag name.
+  { field: "serviceProviderCode", headerName: "Agency ID", editable: true, minWidth: 130 },
+  { field: "defaultValue", headerName: "Default Value", editable: true, minWidth: 130 },
+  { field: "description", headerName: "Description", editable: true, minWidth: 160 },
+  { field: "type", headerName: "Type", editable: true, minWidth: 110 },
+  { field: "valueSize", headerName: "Value Size", editable: true, hide: true },
+  { field: "valueCount", headerName: "# Values", editable: false, minWidth: 90 },
 ];
 
 const PARENT_EDITABLE_FIELDS = PARENT_COLUMNS.filter((c) => c.editable).map(
@@ -44,17 +52,35 @@ const PARENT_EDITABLE_FIELDS = PARENT_COLUMNS.filter((c) => c.editable).map(
 );
 
 const CHILD_COLUMNS: ColDef<StandardChoiceValueRow>[] = [
-  { field: "refId", headerName: "Ref ID", editable: false, width: 170, pinned: "left" },
-  { field: "value", editable: true, flex: 1, minWidth: 200 },
-  { field: "description", editable: true, flex: 1, minWidth: 200 },
-  { field: "sortOrder", headerName: "Sort Order", editable: true, width: 110 },
-  { field: "sequenceNBR", headerName: "Sequence #", editable: true, width: 130 },
-  { field: "standardChoiceName", headerName: "Parent Name", editable: false, flex: 1, minWidth: 160 },
+  { field: "refId", headerName: "Ref ID", editable: false, hide: true },
+  { field: "value", headerName: "Value", editable: true, minWidth: 160 },
+  { field: "description", headerName: "Description", editable: true, minWidth: 160 },
+  { field: "sortOrder", headerName: "Sort Order", editable: true, minWidth: 110 },
+  { field: "sequenceNBR", headerName: "Sequence #", editable: true, hide: true },
+  { field: "standardChoiceName", headerName: "Parent Name", editable: false, hide: true },
 ];
 
 const CHILD_EDITABLE_FIELDS = CHILD_COLUMNS.filter((c) => c.editable).map(
   (c) => c.field as string
 );
+
+/** Most common non-empty Agency ID among existing rows — used to auto-populate new rows. */
+function inferCommonAgencyId(rows: StandardChoiceRow[]): string {
+  const counts = new Map<string, number>();
+  for (const r of rows) {
+    const v = r.serviceProviderCode.trim();
+    if (v) counts.set(v, (counts.get(v) ?? 0) + 1);
+  }
+  let best = "";
+  let bestCount = 0;
+  for (const [v, c] of counts) {
+    if (c > bestCount) {
+      best = v;
+      bestCount = c;
+    }
+  }
+  return best;
+}
 
 /**
  * AG Grid Community edition does not include the Range Selection / Clipboard
@@ -70,12 +96,12 @@ const CHILD_EDITABLE_FIELDS = CHILD_COLUMNS.filter((c) => c.editable).map(
 // across renders (e.g. after the selected parent row changes) since several
 // of the closures below (getRows/applyEdit/createRow) are themselves
 // recreated every render.
-function createPasteHandler<T extends { refId: string }>(opts: {
+function createPasteHandler<T extends { uid: string }>(opts: {
   gridApiRef: React.RefObject<any>;
   editableFields: string[];
   getRows: () => T[];
   setRows: (rows: T[]) => void;
-  applyEdit: (refId: string, field: string, value: string) => T;
+  applyEdit: (uid: string, field: string, value: string) => T;
   createRow: () => T;
 }) {
   return (e: React.ClipboardEvent<HTMLDivElement>) => {
@@ -111,8 +137,8 @@ function createPasteHandler<T extends { refId: string }>(opts: {
       cells.forEach((cellValue, j) => {
         const field = opts.editableFields[startFieldIndex + j];
         if (!field) return;
-        targetRow = opts.applyEdit(targetRow.refId, field, cellValue);
-        currentRows = currentRows.map((r) => (r.refId === targetRow.refId ? targetRow : r));
+        targetRow = opts.applyEdit(targetRow.uid, field, cellValue);
+        currentRows = currentRows.map((r) => (r.uid === targetRow.uid ? targetRow : r));
       });
     });
 
@@ -120,17 +146,17 @@ function createPasteHandler<T extends { refId: string }>(opts: {
   };
 }
 
-export default function StandardChoiceGrid({ records, onChange }: Props) {
+export default function StandardChoiceGrid({ records, onChange, gridThemeClass }: Props) {
   const [parentRows, setParentRows] = useState<StandardChoiceRow[]>(() =>
     records.map(toStandardChoiceRow)
   );
-  const [selectedRefId, setSelectedRefId] = useState<string | null>(
-    records[0] ? getNodeRefId(records[0]) : null
+  const [selectedUid, setSelectedUid] = useState<string | null>(
+    parentRows[0]?.uid ?? null
   );
 
   const selectedNode = useMemo(
-    () => records.find((r) => getNodeRefId(r) === selectedRefId) ?? null,
-    [records, selectedRefId]
+    () => (selectedUid ? findStandardChoiceByUid(records, selectedUid) ?? null : null),
+    [records, selectedUid]
   );
 
   const [childRows, setChildRows] = useState<StandardChoiceValueRow[]>(() =>
@@ -139,85 +165,124 @@ export default function StandardChoiceGrid({ records, onChange }: Props) {
 
   const parentGridRef = useRef<AgGridReact<StandardChoiceRow>>(null);
   const childGridRef = useRef<AgGridReact<StandardChoiceValueRow>>(null);
+  const pendingParentFocusUid = useRef<string | null>(null);
+  const pendingChildFocusUid = useRef<string | null>(null);
+
+  useEffect(() => {
+    parentGridRef.current?.api?.autoSizeAllColumns();
+    const uid = pendingParentFocusUid.current;
+    pendingParentFocusUid.current = null;
+    if (!uid) return;
+    const api = parentGridRef.current?.api;
+    const rowNode = api?.getRowNode(uid);
+    if (api && rowNode) {
+      rowNode.setSelected(true, true);
+      api.ensureNodeVisible(rowNode);
+      if (rowNode.rowIndex != null) api.setFocusedCell(rowNode.rowIndex, "name");
+    }
+  }, [parentRows]);
+
+  useEffect(() => {
+    childGridRef.current?.api?.autoSizeAllColumns();
+    const uid = pendingChildFocusUid.current;
+    pendingChildFocusUid.current = null;
+    if (!uid) return;
+    const api = childGridRef.current?.api;
+    const rowNode = api?.getRowNode(uid);
+    if (api && rowNode) {
+      rowNode.setSelected(true, true);
+      api.ensureNodeVisible(rowNode);
+      if (rowNode.rowIndex != null) api.setFocusedCell(rowNode.rowIndex, "value");
+    }
+  }, [childRows]);
 
   const refreshChildRows = useCallback((node: PNode | null) => {
     setChildRows(node ? getStandardChoiceValueNodes(node).map(toStandardChoiceValueRow) : []);
   }, []);
 
-  const refreshParentRow = useCallback(
-    (node: PNode) => {
-      const updated = toStandardChoiceRow(node);
-      setParentRows((prev) => prev.map((r) => (r.refId === updated.refId ? updated : r)));
-    },
-    []
-  );
+  const refreshParentRow = useCallback((node: PNode) => {
+    const updated = toStandardChoiceRow(node);
+    setParentRows((prev) => prev.map((r) => (r.uid === updated.uid ? updated : r)));
+  }, []);
+
+  const flashRow = useCallback((api: any, uid: string, field: string) => {
+    const rowNode = api?.getRowNode(uid);
+    if (api && rowNode) api.flashCells({ rowNodes: [rowNode], columns: [field] });
+  }, []);
 
   const onSelectionChanged = useCallback(() => {
     const selected = parentGridRef.current?.api.getSelectedRows() ?? [];
-    const refId = selected[0]?.refId ?? null;
-    setSelectedRefId(refId);
-    const node = records.find((r) => getNodeRefId(r) === refId) ?? null;
-    refreshChildRows(node);
+    const uid = selected[0]?.uid ?? null;
+    setSelectedUid(uid);
+    const node = uid ? findStandardChoiceByUid(records, uid) : null;
+    refreshChildRows(node ?? null);
   }, [records, refreshChildRows]);
 
   const onParentCellValueChanged = useCallback(
     (e: CellValueChangedEvent<StandardChoiceRow>) => {
-      const node = records.find((r) => getNodeRefId(r) === e.data.refId);
+      const node = findStandardChoiceByUid(records, e.data.uid);
       if (!node) return;
       const field = e.colDef.field as string;
       setStandardChoiceField(node, field, String(e.newValue ?? ""));
       refreshParentRow(node);
-      if (field === "name" && selectedRefId === e.data.refId) {
+      if (field === "name" && selectedUid === e.data.uid) {
         refreshChildRows(node);
       }
+      flashRow(parentGridRef.current?.api, e.data.uid, field);
       onChange();
     },
-    [records, selectedRefId, refreshChildRows, refreshParentRow, onChange]
+    [records, selectedUid, refreshChildRows, refreshParentRow, flashRow, onChange]
   );
 
   const onChildCellValueChanged = useCallback(
     (e: CellValueChangedEvent<StandardChoiceValueRow>) => {
       if (!selectedNode) return;
-      const node = getStandardChoiceValueNodes(selectedNode).find(
-        (n) => getNodeRefId(n) === e.data.refId
-      );
+      const node = findStandardChoiceValueByUid(selectedNode, e.data.uid);
       if (!node) return;
       const field = e.colDef.field as string;
       setStandardChoiceValueField(node, field, String(e.newValue ?? ""));
       const updated = toStandardChoiceValueRow(node);
-      setChildRows((prev) => prev.map((r) => (r.refId === updated.refId ? updated : r)));
+      setChildRows((prev) => prev.map((r) => (r.uid === updated.uid ? updated : r)));
+      flashRow(childGridRef.current?.api, e.data.uid, field);
       onChange();
     },
-    [selectedNode, onChange]
+    [selectedNode, flashRow, onChange]
   );
 
   const addParentRow = useCallback(() => {
     const num = nextRefIdNumber(records, "StandardChoiceModel");
-    const node = createStandardChoiceNode(num);
+    const node = createStandardChoiceNode(num, inferCommonAgencyId(parentRows));
     records.push(node);
-    setParentRows((prev) => [...prev, toStandardChoiceRow(node)]);
+    const row = toStandardChoiceRow(node);
+    pendingParentFocusUid.current = row.uid;
+    setParentRows((prev) => [...prev, row]);
     onChange();
-  }, [records, onChange]);
+  }, [records, parentRows, onChange]);
 
   const deleteSelectedParentRows = useCallback(() => {
     const selected = (parentGridRef.current?.api.getSelectedRows() ?? []) as StandardChoiceRow[];
-    for (const row of selected) deleteStandardChoice(records, row.refId);
-    const remaining = new Set(records.map(getNodeRefId));
-    setParentRows((prev) => prev.filter((r) => remaining.has(r.refId)));
-    if (selectedRefId && !remaining.has(selectedRefId)) {
-      setSelectedRefId(null);
+    for (const row of selected) {
+      const node = findStandardChoiceByUid(records, row.uid);
+      if (node) deleteStandardChoice(records, node);
+    }
+    const deletedUids = new Set(selected.map((r) => r.uid));
+    setParentRows((prev) => prev.filter((r) => !deletedUids.has(r.uid)));
+    if (selectedUid && deletedUids.has(selectedUid)) {
+      setSelectedUid(null);
       setChildRows([]);
     }
     onChange();
-  }, [records, selectedRefId, onChange]);
+  }, [records, selectedUid, onChange]);
 
   const addChildRow = useCallback(() => {
     if (!selectedNode) return;
     const num = nextRefIdNumber(records, "StandardChoiceValueModel");
-    const parentName = toStandardChoiceRow(selectedNode).name;
-    const node = createStandardChoiceValueNode(num, parentName);
+    const parentRow = toStandardChoiceRow(selectedNode);
+    const node = createStandardChoiceValueNode(num, parentRow.name, parentRow.serviceProviderCode);
     getStandardChoiceValueNodes(selectedNode).push(node);
-    setChildRows((prev) => [...prev, toStandardChoiceValueRow(node)]);
+    const row = toStandardChoiceValueRow(node);
+    pendingChildFocusUid.current = row.uid;
+    setChildRows((prev) => [...prev, row]);
     refreshParentRow(selectedNode);
     onChange();
   }, [records, selectedNode, refreshParentRow, onChange]);
@@ -226,29 +291,32 @@ export default function StandardChoiceGrid({ records, onChange }: Props) {
     if (!selectedNode) return;
     const selected = (childGridRef.current?.api.getSelectedRows() ??
       []) as StandardChoiceValueRow[];
-    for (const row of selected) deleteStandardChoiceValue(selectedNode, row.refId);
+    for (const row of selected) {
+      const node = findStandardChoiceValueByUid(selectedNode, row.uid);
+      if (node) deleteStandardChoiceValue(selectedNode, node);
+    }
     refreshChildRows(selectedNode);
     refreshParentRow(selectedNode);
     onChange();
   }, [selectedNode, refreshChildRows, refreshParentRow, onChange]);
 
   const parentApplyEdit = useCallback(
-    (refId: string, field: string, value: string) => {
-      const node = records.find((r) => getNodeRefId(r) === refId);
+    (uid: string, field: string, value: string) => {
+      const node = findStandardChoiceByUid(records, uid);
       if (!node) throw new Error("row not found");
       setStandardChoiceField(node, field, value);
-      if (field === "name" && selectedRefId === refId) refreshChildRows(node);
+      if (field === "name" && selectedUid === uid) refreshChildRows(node);
       return toStandardChoiceRow(node);
     },
-    [records, selectedRefId, refreshChildRows]
+    [records, selectedUid, refreshChildRows]
   );
 
   const parentCreateRow = useCallback(() => {
     const num = nextRefIdNumber(records, "StandardChoiceModel");
-    const node = createStandardChoiceNode(num);
+    const node = createStandardChoiceNode(num, inferCommonAgencyId(parentRows));
     records.push(node);
     return toStandardChoiceRow(node);
-  }, [records]);
+  }, [records, parentRows]);
 
   const handleParentPaste = createPasteHandler<StandardChoiceRow>({
     gridApiRef: parentGridRef,
@@ -263,11 +331,9 @@ export default function StandardChoiceGrid({ records, onChange }: Props) {
   });
 
   const childApplyEdit = useCallback(
-    (refId: string, field: string, value: string) => {
+    (uid: string, field: string, value: string) => {
       if (!selectedNode) throw new Error("no parent selected");
-      const node = getStandardChoiceValueNodes(selectedNode).find(
-        (n) => getNodeRefId(n) === refId
-      );
+      const node = findStandardChoiceValueByUid(selectedNode, uid);
       if (!node) throw new Error("row not found");
       setStandardChoiceValueField(node, field, value);
       return toStandardChoiceValueRow(node);
@@ -278,8 +344,8 @@ export default function StandardChoiceGrid({ records, onChange }: Props) {
   const childCreateRow = useCallback(() => {
     if (!selectedNode) throw new Error("no parent selected");
     const num = nextRefIdNumber(records, "StandardChoiceValueModel");
-    const parentName = toStandardChoiceRow(selectedNode).name;
-    const node = createStandardChoiceValueNode(num, parentName);
+    const parentRow = toStandardChoiceRow(selectedNode);
+    const node = createStandardChoiceValueNode(num, parentRow.name, parentRow.serviceProviderCode);
     getStandardChoiceValueNodes(selectedNode).push(node);
     return toStandardChoiceValueRow(node);
   }, [records, selectedNode]);
@@ -298,59 +364,55 @@ export default function StandardChoiceGrid({ records, onChange }: Props) {
   });
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <div>
-        <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-          <button onClick={addParentRow}>+ Add Standard Choice</button>
-          <button onClick={deleteSelectedParentRows}>Delete Selected</button>
-          <span style={{ alignSelf: "center", color: "#666", fontSize: 13 }}>
-            Standard Choices ({parentRows.length})
-          </span>
+    <div className="grid-stack">
+      <div className="grid-panel">
+        <div className="grid-toolbar">
+          <button className="btn" onClick={addParentRow}>
+            + Add Standard Choice
+          </button>
+          <button className="btn btn-danger" onClick={deleteSelectedParentRows}>
+            Delete Selected
+          </button>
+          <span className="grid-toolbar-label">Standard Choices ({parentRows.length})</span>
         </div>
-        <div
-          className="ag-theme-quartz"
-          style={{ height: 320, width: "100%" }}
-          onPaste={handleParentPaste}
-        >
+        <div className={gridThemeClass} style={{ flex: 1, width: "100%", minHeight: 0 }} onPaste={handleParentPaste}>
           <AgGridReact<StandardChoiceRow>
             ref={parentGridRef}
             rowData={parentRows}
             columnDefs={PARENT_COLUMNS}
-            getRowId={(p) => p.data.refId}
+            getRowId={(p) => p.data.uid}
             rowSelection="single"
             onSelectionChanged={onSelectionChanged}
             onCellValueChanged={onParentCellValueChanged}
+            onFirstDataRendered={(e) => e.api.autoSizeAllColumns()}
             stopEditingWhenCellsLoseFocus
           />
         </div>
       </div>
 
-      <div>
-        <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-          <button onClick={addChildRow} disabled={!selectedNode}>
+      <div className="grid-panel">
+        <div className="grid-toolbar">
+          <button className="btn" onClick={addChildRow} disabled={!selectedNode}>
             + Add Value
           </button>
-          <button onClick={deleteSelectedChildRows} disabled={!selectedNode}>
+          <button className="btn btn-danger" onClick={deleteSelectedChildRows} disabled={!selectedNode}>
             Delete Selected
           </button>
-          <span style={{ alignSelf: "center", color: "#666", fontSize: 13 }}>
+          <span className="grid-toolbar-label">
             {selectedNode
-              ? `Values for "${toStandardChoiceRow(selectedNode).name}" (${childRows.length})`
+              ? `Values for "${toStandardChoiceRow(selectedNode).name || "(unnamed)"}" (${childRows.length})`
               : "Select a Standard Choice above to see its values"}
           </span>
         </div>
-        <div
-          className="ag-theme-quartz"
-          style={{ height: 320, width: "100%" }}
-          onPaste={handleChildPaste}
-        >
+        <div className={gridThemeClass} style={{ flex: 1, width: "100%", minHeight: 0 }} onPaste={handleChildPaste}>
           <AgGridReact<StandardChoiceValueRow>
             ref={childGridRef}
             rowData={childRows}
             columnDefs={CHILD_COLUMNS}
-            getRowId={(p) => p.data.refId}
+            getRowId={(p) => p.data.uid}
             rowSelection="multiple"
             onCellValueChanged={onChildCellValueChanged}
+            onFirstDataRendered={(e) => e.api.autoSizeAllColumns()}
             stopEditingWhenCellsLoseFocus
           />
         </div>

@@ -291,6 +291,7 @@ export function buildExportedXml(file: ParsedStandardChoiceFile): string {
 // ---------------------------------------------------------------------------
 
 export interface StandardChoiceRow {
+  uid: string;
   refId: string;
   name: string;
   serviceProviderCode: string;
@@ -307,6 +308,7 @@ export function toStandardChoiceRow(node: PNode): StandardChoiceRow {
     (c) => getTagName(c) === "standardChoiceValue"
   ).length;
   return {
+    uid: getNodeUid(node),
     refId: getAttr(node, "refId") ?? "",
     name: getChildText(children, "name"),
     serviceProviderCode: getChildText(children, "serviceProviderCode"),
@@ -319,6 +321,7 @@ export function toStandardChoiceRow(node: PNode): StandardChoiceRow {
 }
 
 export interface StandardChoiceValueRow {
+  uid: string;
   refId: string;
   value: string;
   description: string;
@@ -330,6 +333,7 @@ export interface StandardChoiceValueRow {
 export function toStandardChoiceValueRow(node: PNode): StandardChoiceValueRow {
   const children = getChildren(node);
   return {
+    uid: getNodeUid(node),
     refId: getAttr(node, "refId") ?? "",
     value: getChildText(children, "value"),
     description: getChildText(children, "description"),
@@ -343,20 +347,35 @@ export function getNodeRefId(node: PNode): string {
   return getAttr(node, "refId") ?? "";
 }
 
-export function findStandardChoiceByRefId(
-  records: PNode[],
-  refId: string
-): PNode | undefined {
-  return records.find((n) => getAttr(n, "refId") === refId);
+/**
+ * `refId` is NOT a reliable unique key within a file — see the doc comment
+ * on refId in docs/schema-standard-choice.md, and confirmed in practice:
+ * some real exports (e.g. sc4richard.xml) reuse "1@StandardChoiceModel" on
+ * every standardChoice record. Row identity (grid selection, add/delete,
+ * paste targeting) uses this synthetic per-node id instead, lazily assigned
+ * and stable for the node's lifetime in memory.
+ */
+const nodeUids = new WeakMap<PNode, string>();
+let nodeUidCounter = 0;
+
+export function getNodeUid(node: PNode): string {
+  let uid = nodeUids.get(node);
+  if (!uid) {
+    uid = `n${++nodeUidCounter}`;
+    nodeUids.set(node, uid);
+  }
+  return uid;
 }
 
-export function findStandardChoiceValueByRefId(
+export function findStandardChoiceByUid(records: PNode[], uid: string): PNode | undefined {
+  return records.find((n) => getNodeUid(n) === uid);
+}
+
+export function findStandardChoiceValueByUid(
   standardChoiceNode: PNode,
-  refId: string
+  uid: string
 ): PNode | undefined {
-  return getOrCreateValueNodesArray(standardChoiceNode).find(
-    (n) => getAttr(n, "refId") === refId
-  );
+  return getOrCreateValueNodesArray(standardChoiceNode).find((n) => getNodeUid(n) === uid);
 }
 
 export function getStandardChoiceValueNodes(standardChoiceNode: PNode): PNode[] {
@@ -401,10 +420,10 @@ function createAuditModelNode(): PNode {
   return { auditModel: children };
 }
 
-export function createStandardChoiceNode(refIdNum: number): PNode {
+export function createStandardChoiceNode(refIdNum: number, serviceProviderCode = ""): PNode {
   const children: PNode[] = [];
   setChildText(children, "name", "");
-  setChildText(children, "serviceProviderCode", "");
+  setChildText(children, "serviceProviderCode", serviceProviderCode);
   children.push(createAuditModelNode());
   setChildText(children, "defaultValue", "");
   setChildText(children, "description", "");
@@ -414,10 +433,14 @@ export function createStandardChoiceNode(refIdNum: number): PNode {
   return node;
 }
 
-export function createStandardChoiceValueNode(refIdNum: number, parentName: string): PNode {
+export function createStandardChoiceValueNode(
+  refIdNum: number,
+  parentName: string,
+  serviceProviderCode = ""
+): PNode {
   const children: PNode[] = [];
   setChildText(children, "sequenceNBR", "");
-  setChildText(children, "serviceProviderCode", "");
+  setChildText(children, "serviceProviderCode", serviceProviderCode);
   children.push(createAuditModelNode());
   setChildText(children, "description", "");
   setChildText(children, "standardChoiceName", parentName);
@@ -428,13 +451,14 @@ export function createStandardChoiceValueNode(refIdNum: number, parentName: stri
   return node;
 }
 
-export function deleteStandardChoice(records: PNode[], refId: string) {
-  const idx = records.findIndex((n) => getAttr(n, "refId") === refId);
+// Identity-based (not refId-based — refId isn't guaranteed unique, see getNodeUid).
+export function deleteStandardChoice(records: PNode[], node: PNode) {
+  const idx = records.indexOf(node);
   if (idx >= 0) records.splice(idx, 1);
 }
 
-export function deleteStandardChoiceValue(standardChoiceNode: PNode, refId: string) {
+export function deleteStandardChoiceValue(standardChoiceNode: PNode, valueNode: PNode) {
   const arr = getOrCreateValueNodesArray(standardChoiceNode);
-  const idx = arr.findIndex((n) => getAttr(n, "refId") === refId);
+  const idx = arr.indexOf(valueNode);
   if (idx >= 0) arr.splice(idx, 1);
 }
