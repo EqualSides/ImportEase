@@ -448,7 +448,17 @@ export default function Home() {
               <div className="sensitive-gate-row" key={m.path}>
                 <div className="sensitive-gate-file">
                   <span className="sensitive-gate-path">{m.path}</span>
-                  <span className="sensitive-gate-reason">{m.reason}</span>
+                  <span className="sensitive-gate-reason">
+                    <strong
+                      style={{
+                        color:
+                          m.tier === "credentials" ? "var(--accent-danger)" : "var(--accent-amber)",
+                      }}
+                    >
+                      {m.tier === "credentials" ? "Credentials/PII — " : "Embedded security reference — "}
+                    </strong>
+                    {m.reason}
+                  </span>
                 </div>
                 <div className="sensitive-gate-actions">
                   <button
