@@ -291,7 +291,10 @@ export default function Home() {
   // it (see mergeParseResults), so there needs to be an explicit way back
   // to a clean slate.
   const handleClear = useCallback(() => {
-    if (zipResult && !window.confirm("Clear the current session? Unsaved changes will be lost.")) {
+    if (
+      zipResult &&
+      !window.confirm("Clear this session? All data will be cleared and cannot be recovered.")
+    ) {
       return;
     }
     setZipResult(null);
@@ -415,15 +418,33 @@ export default function Home() {
           ImportEase
         </div>
 
-        <div className="topbar-spacer" />
-
         <div className={`saved-badge${savedVisible ? " visible" : ""}`}>
           <span className="pulse-dot" />
           Saved in session
         </div>
 
+        <div className="topbar-spacer" />
+
+        {/* 1 */}
+        <label className="file-input-label">
+          Upload .zip
+          <input
+            type="file"
+            accept=".zip"
+            multiple
+            onChange={handleFileChange}
+            disabled={loading}
+          />
+        </label>
+
+        {/* 2 */}
+        <button className="btn btn-danger" onClick={handleClear} disabled={!zipResult}>
+          Clear
+        </button>
+
         {zipResult && (
           <>
+            {/* 3 */}
             <label className="field-label">
               Export as
               <input
@@ -434,6 +455,7 @@ export default function Home() {
               />
             </label>
 
+            {/* 4 */}
             <label className="field-label">
               Agency ID
               <input
@@ -453,17 +475,7 @@ export default function Home() {
           </>
         )}
 
-        <label className="file-input-label">
-          Upload .zip
-          <input
-            type="file"
-            accept=".zip"
-            multiple
-            onChange={handleFileChange}
-            disabled={loading}
-          />
-        </label>
-
+        {/* 5 */}
         <select className="select" value="" onChange={handleNewFile} aria-label="Start a new file">
           <option value="" disabled hidden>
             Start new file
@@ -483,14 +495,6 @@ export default function Home() {
             ))}
           </optgroup>
         </select>
-
-        <button className="btn btn-danger" onClick={handleClear} disabled={!zipResult}>
-          Clear
-        </button>
-
-        <button className="btn icon-btn" onClick={toggleTheme} title="Toggle light/dark mode">
-          {theme === "dark" ? "☀" : "☾"}
-        </button>
 
         {standardChoiceEntries.length > 1 && (
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -514,13 +518,18 @@ export default function Home() {
           </div>
         )}
 
+        {/* 6 */}
         <button
           className="btn btn-primary"
           onClick={handleExport}
           disabled={!zipResult || exporting || undecidedSensitive.length > 0}
-          style={{ marginLeft: "auto" }}
         >
           {exporting ? "Building zip…" : "Export .zip"}
+        </button>
+
+        {/* 7 */}
+        <button className="btn icon-btn" onClick={toggleTheme} title="Toggle light/dark mode">
+          {theme === "dark" ? "☀" : "☾"}
         </button>
       </div>
 
