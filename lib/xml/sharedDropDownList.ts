@@ -41,6 +41,7 @@ import {
   setChildText,
 } from "./pnode";
 
+export type { PNode, ListAttrs };
 export type ParsedSharedDropDownFile = ParsedListFile;
 
 const COLLECTION_TAGS = new Set([
