@@ -76,10 +76,12 @@ export default function Home() {
     );
   }, []);
 
-  const handleFileChange = useCallback(
-    async (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (!file) return;
+  const processFile = useCallback(
+    async (file: File) => {
+      if (!file.name.toLowerCase().endsWith(".zip")) {
+        setError("Please drop a .zip file (an Accela Configuration Manager export).");
+        return;
+      }
       setLoading(true);
       setError(null);
       setZipResult(null);
@@ -95,10 +97,51 @@ export default function Home() {
         setError(err instanceof Error ? err.message : "Upload failed");
       } finally {
         setLoading(false);
-        e.target.value = "";
       }
     },
     [loadEntries]
+  );
+
+  const handleFileChange = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (file) await processFile(file);
+      e.target.value = "";
+    },
+    [processFile]
+  );
+
+  // Page-wide drag-and-drop, in addition to the Upload button. dragDepth
+  // (rather than a plain boolean) survives dragenter/dragleave firing on
+  // nested children as the cursor moves across the page.
+  const [dragDepth, setDragDepth] = useState(0);
+
+  const handleDragEnter = useCallback((e: React.DragEvent) => {
+    if (!e.dataTransfer.types.includes("Files")) return;
+    e.preventDefault();
+    setDragDepth((d) => d + 1);
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    if (!e.dataTransfer.types.includes("Files")) return;
+    e.preventDefault();
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    if (!e.dataTransfer.types.includes("Files")) return;
+    e.preventDefault();
+    setDragDepth((d) => Math.max(0, d - 1));
+  }, []);
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      if (!e.dataTransfer.types.includes("Files")) return;
+      e.preventDefault();
+      setDragDepth(0);
+      const file = e.dataTransfer.files?.[0];
+      if (file) processFile(file);
+    },
+    [processFile]
   );
 
   const handleNewFile = useCallback(
@@ -167,7 +210,18 @@ export default function Home() {
   const gridThemeClass = theme === "dark" ? "ag-theme-quartz-dark" : "ag-theme-quartz";
 
   return (
-    <div className="app-shell">
+    <div
+      className="app-shell"
+      onDragEnter={handleDragEnter}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      {dragDepth > 0 && (
+        <div className="drop-overlay">
+          <div className="drop-overlay-inner">Drop to import .zip</div>
+        </div>
+      )}
       <div className="topbar">
         <div className="topbar-title">
           <span className="dot" />
@@ -285,7 +339,7 @@ export default function Home() {
           <div className="main-empty">
             {zipResult
               ? "No Standard Choices file was recognized in this zip. Everything else will still be passed through untouched on export."
-              : "Upload a Configuration Manager export .zip, or start a blank file above, to begin."}
+              : "Upload or drag in a Configuration Manager export .zip, or start a blank file above, to begin."}
           </div>
         )}
       </div>

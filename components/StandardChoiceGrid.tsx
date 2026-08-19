@@ -205,6 +205,12 @@ function createDropHandler<T extends { uid: string }>(opts: PasteHandlerOpts<T>)
   return (e: React.DragEvent<HTMLDivElement>) => {
     const file = e.dataTransfer.files?.[0];
     if (!file) return;
+
+    // A dropped .zip is a whole-file import, not a data paste — let it
+    // bubble up to the page-level dropzone instead of misreading the
+    // binary as CSV text here.
+    if (/\.zip$/i.test(file.name)) return;
+
     e.preventDefault();
 
     const looksBinaryExcel = /\.xlsx$|\.xls$/i.test(file.name);

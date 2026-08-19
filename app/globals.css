@@ -55,6 +55,26 @@ button {
   overflow: hidden;
 }
 
+.drop-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(11, 18, 32, 0.72);
+  border: 3px dashed var(--accent-cyan);
+  pointer-events: none;
+}
+
+.drop-overlay-inner {
+  font-family: var(--font-display), sans-serif;
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--accent-cyan);
+  letter-spacing: 0.02em;
+}
+
 .topbar {
   display: flex;
   align-items: center;
