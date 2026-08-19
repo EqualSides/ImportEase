@@ -194,7 +194,11 @@ export default function Home() {
       const zipName = withZipExtension(exportZipName);
       const entries = zipResult.entries.filter((en) => sensitiveDecisions[en.path] !== "remove");
       const bytes = await exportZipInWorker(entries, zipName);
-      const blob = new Blob([bytes], { type: "application/zip" });
+      // TS's DOM lib types a worker-derived Uint8Array's buffer as the
+      // broader ArrayBufferLike (which could in principle be a
+      // SharedArrayBuffer), which BlobPart doesn't accept — it's always a
+      // plain ArrayBuffer in practice here (from JSZip's generateAsync).
+      const blob = new Blob([bytes as unknown as BlobPart], { type: "application/zip" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;

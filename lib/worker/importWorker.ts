@@ -29,9 +29,13 @@ ctx.onmessage = async (e: MessageEvent<WorkerRequest>) => {
   try {
     if (msg.type === "parse") {
       const result = await parseUploadedZip(msg.buffer, msg.zipName);
+      // TS's DOM lib types a Uint8Array's .buffer as the broader
+      // ArrayBufferLike (which could in principle be a SharedArrayBuffer),
+      // which the transfer list's Transferable[] doesn't accept — these
+      // are always plain ArrayBuffers in practice (from JSZip).
       const transfer = result.entries
         .filter((en): en is Extract<ZipEntryData, { kind: "passthrough" }> => en.kind === "passthrough")
-        .map((en) => en.bytes.buffer);
+        .map((en) => en.bytes.buffer) as Transferable[];
       const response: WorkerResponse = { type: "parsed", requestId: msg.requestId, result };
       ctx.postMessage(response, transfer);
     } else if (msg.type === "export") {
@@ -42,7 +46,7 @@ ctx.onmessage = async (e: MessageEvent<WorkerRequest>) => {
         bytes,
         zipName: msg.zipName,
       };
-      ctx.postMessage(response, [bytes.buffer]);
+      ctx.postMessage(response, [bytes.buffer] as Transferable[]);
     }
   } catch (err) {
     const response: WorkerResponse = {
