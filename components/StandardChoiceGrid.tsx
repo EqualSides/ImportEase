@@ -555,7 +555,7 @@ const StandardChoiceGrid = forwardRef<StandardChoiceGridHandle, Props>(function 
         className="grid-panel"
         style={
           topPanelCollapsed
-            ? { flex: "0 0 auto" }
+            ? { flex: "0 0 auto", height: "auto", minHeight: 0 }
             : { flex: "0 0 auto", height: topPanelHeight ?? undefined, minHeight: MIN_PANEL_PX }
         }
       >
