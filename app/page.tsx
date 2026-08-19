@@ -425,8 +425,6 @@ export default function Home() {
           Saved in session
         </div>
 
-        <div className="topbar-spacer" />
-
         {/* 1 */}
         <label className="file-input-label">
           Upload .zip
@@ -451,6 +449,7 @@ export default function Home() {
               Export as
               <input
                 className="text-input"
+                style={{ width: 220 }}
                 value={exportZipName}
                 onChange={(e) => setExportZipName(e.target.value)}
                 placeholder="export.zip"
@@ -510,7 +509,7 @@ export default function Home() {
                 }}
                 style={
                   en.path === activePath
-                    ? { borderColor: "var(--accent-cyan)", color: "var(--accent-cyan)" }
+                    ? { borderColor: "var(--accent-cyan-text)", color: "var(--accent-cyan-text)" }
                     : undefined
                 }
               >
@@ -546,7 +545,9 @@ export default function Home() {
                     <strong
                       style={{
                         color:
-                          m.tier === "credentials" ? "var(--accent-danger)" : "var(--accent-amber)",
+                          m.tier === "credentials"
+                            ? "var(--accent-danger-text)"
+                            : "var(--accent-amber-text)",
                       }}
                     >
                       {m.tier === "credentials" ? "Credentials/PII — " : "Embedded security reference — "}
