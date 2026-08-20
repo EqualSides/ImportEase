@@ -59,3 +59,27 @@ export async function checkSubscriptionStatus(userId: string): Promise<Subscript
   if (!data.approved) return "pending";
   return new Date(data.expires_at).getTime() > Date.now() ? "active" : "expired";
 }
+
+// The admin Edge Functions (admin-create-account, admin-list-accounts)
+// reject an expired access token with 403 "Forbidden" — supabase-js's
+// background auto-refresh timer is throttled while a browser tab is
+// backgrounded/inactive, so a long-idle Admin panel session can end up
+// sending a stale token even though the user is still legitimately
+// signed in. Surfacing that as a raw "Edge Function returned a non-2xx
+// status code" is both unhelpful and unnecessary — a proactive
+// refresh-and-retry silently recovers the common case, and only a
+// genuinely invalid/expired session (refresh itself fails) surfaces an
+// error to the user.
+export async function invokeAdminFunction<T = any>(
+  name: string,
+  body: Record<string, unknown>
+): Promise<{ data: T | null; error: { message: string } | null }> {
+  const first = await supabase.functions.invoke<T>(name, { body });
+  const firstFailed = !!first.error || (first.data as any)?.error === "Forbidden";
+  if (!firstFailed) return first;
+
+  const { error: refreshError } = await supabase.auth.refreshSession();
+  if (refreshError) return first;
+
+  return supabase.functions.invoke<T>(name, { body });
+}

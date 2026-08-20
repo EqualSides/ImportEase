@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabase, type AccessRequestRow } from "@/lib/supabase/client";
+import { supabase, invokeAdminFunction, type AccessRequestRow } from "@/lib/supabase/client";
 
 interface AdminPanelProps {
   onClose: () => void;
@@ -112,7 +112,7 @@ function AccountsTab() {
   const load = async () => {
     setLoading(true);
     setListError(null);
-    const { data, error } = await supabase.functions.invoke("admin-list-accounts", { body: {} });
+    const { data, error } = await invokeAdminFunction("admin-list-accounts", {});
     setLoading(false);
     if (error || data?.error) {
       setListError(data?.error || error?.message || "Failed to load accounts.");
@@ -152,8 +152,10 @@ function AccountRowItem({ account, onChanged }: { account: AccountRow; onChanged
     }
     setSubmitting("reset");
     setError(null);
-    const { data, error: fnError } = await supabase.functions.invoke("admin-create-account", {
-      body: { username, password: newPassword, action: "reset" },
+    const { data, error: fnError } = await invokeAdminFunction("admin-create-account", {
+      username,
+      password: newPassword,
+      action: "reset",
     });
     setSubmitting(null);
     if (fnError || data?.error) {
@@ -167,8 +169,10 @@ function AccountRowItem({ account, onChanged }: { account: AccountRow; onChanged
   const renew = async (period: "half" | "year") => {
     setSubmitting(period);
     setError(null);
-    const { data, error: fnError } = await supabase.functions.invoke("admin-create-account", {
-      body: { username, action: "renew", period },
+    const { data, error: fnError } = await invokeAdminFunction("admin-create-account", {
+      username,
+      action: "renew",
+      period,
     });
     setSubmitting(null);
     if (fnError || data?.error) {
@@ -182,8 +186,9 @@ function AccountRowItem({ account, onChanged }: { account: AccountRow; onChanged
     if (!confirm(`Force-expire "${username}" immediately?`)) return;
     setSubmitting("forceExpire");
     setError(null);
-    const { data, error: fnError } = await supabase.functions.invoke("admin-create-account", {
-      body: { username, action: "forceExpire" },
+    const { data, error: fnError } = await invokeAdminFunction("admin-create-account", {
+      username,
+      action: "forceExpire",
     });
     setSubmitting(null);
     if (fnError || data?.error) {
@@ -291,8 +296,11 @@ function ApproveDenyActions({
   const approve = async () => {
     setSubmitting("approve");
     setError(null);
-    const { data, error: fnError } = await supabase.functions.invoke("admin-create-account", {
-      body: { userId: request.user_id, action: "renew", period, requestId: request.id },
+    const { data, error: fnError } = await invokeAdminFunction("admin-create-account", {
+      userId: request.user_id,
+      action: "renew",
+      period,
+      requestId: request.id,
     });
     setSubmitting(null);
     if (fnError || data?.error) {
@@ -352,8 +360,11 @@ function LegacyCreateAccountActions({
     }
     setSubmitting(true);
     setError(null);
-    const { data, error: fnError } = await supabase.functions.invoke("admin-create-account", {
-      body: { username, password, requestId: request.id, expiryOption },
+    const { data, error: fnError } = await invokeAdminFunction("admin-create-account", {
+      username,
+      password,
+      requestId: request.id,
+      expiryOption,
     });
     setSubmitting(false);
     if (fnError || data?.error) {
