@@ -97,6 +97,11 @@ import {
   parseInspectionGroupXml,
 } from "../xml/inspectionGroup";
 import { buildExportedRefDocumentXml, isRefDocumentXml, parseRefDocumentXml } from "../xml/refDocument";
+import {
+  buildExportedDepartmentTypeXml,
+  isDepartmentTypeXml,
+  parseDepartmentTypeXml,
+} from "../xml/departmentType";
 import type { ParseZipResult, ZipEntryData } from "../types";
 
 /**
@@ -157,6 +162,7 @@ const DETECTORS: {
   },
   { kind: "inspectionGroup", sniff: isInspectionGroupXml, parse: parseInspectionGroupXml },
   { kind: "refDocument", sniff: isRefDocumentXml, parse: parseRefDocumentXml },
+  { kind: "departmentType", sniff: isDepartmentTypeXml, parse: parseDepartmentTypeXml },
 ];
 
 export async function parseUploadedZip(
@@ -339,6 +345,11 @@ export async function buildExportZip(entries: ZipEntryData[]): Promise<Uint8Arra
       zip.file(
         entry.path,
         buildExportedRefDocumentXml({ listAttrs: entry.listAttrs, records: entry.records })
+      );
+    } else if (entry.kind === "departmentType") {
+      zip.file(
+        entry.path,
+        buildExportedDepartmentTypeXml({ listAttrs: entry.listAttrs, records: entry.records })
       );
     } else {
       zip.file(entry.path, entry.bytes);

@@ -23,6 +23,15 @@ import InspectionGroupGrid from "@/components/InspectionGroupGrid";
 import RefDocumentGrid from "@/components/RefDocumentGrid";
 import FlatGrid, { type FlatGridColumnMeta } from "@/components/FlatGrid";
 import {
+  createDepartmentTypeNode,
+  deleteDepartmentType,
+  findDepartmentTypeByUid,
+  inferCommonAgencyId as inferCommonAgencyIdDepartmentType,
+  nextRefIdNumber as nextRefIdNumberDepartmentType,
+  setDepartmentTypeField,
+  toDepartmentTypeRow,
+} from "@/lib/xml/departmentType";
+import {
   getStandardChoiceValueNodes,
   inferCommonAgencyId as inferCommonAgencyIdStandardChoice,
   toStandardChoiceRow,
@@ -236,6 +245,7 @@ import type {
   FormLayoutEditorZipEntry,
   InspectionGroupZipEntry,
   RefDocumentZipEntry,
+  DepartmentTypeZipEntry,
   TimeGroupZipEntry,
   TimeTypesZipEntry,
   ZipEntryData,
@@ -274,7 +284,8 @@ type EditableZipEntry =
   | CapTypeZipEntry
   | FormLayoutEditorZipEntry
   | InspectionGroupZipEntry
-  | RefDocumentZipEntry;
+  | RefDocumentZipEntry
+  | DepartmentTypeZipEntry;
 
 function isEditableEntry(entry: ZipEntryData): entry is EditableZipEntry {
   return (
@@ -303,7 +314,8 @@ function isEditableEntry(entry: ZipEntryData): entry is EditableZipEntry {
     entry.kind === "capType" ||
     entry.kind === "formLayoutEditor" ||
     entry.kind === "inspectionGroup" ||
-    entry.kind === "refDocument"
+    entry.kind === "refDocument" ||
+    entry.kind === "departmentType"
   );
 }
 
@@ -367,6 +379,8 @@ function inferAgencyIdForEntry(entry: EditableZipEntry): string {
       return inferCommonAgencyIdInspectionGroup(entry.records.map(toInspectionGroupRow));
     case "refDocument":
       return inferCommonAgencyIdRefDocument(entry.records.map(toRefDocumentRow));
+    case "departmentType":
+      return inferCommonAgencyIdDepartmentType(entry.records.map(toDepartmentTypeRow));
   }
 }
 
@@ -387,7 +401,7 @@ const CATEGORY_OPTIONS: { value: string; label: string; available: boolean }[] =
   { value: "checklistGroup", label: "Checklist Group", available: true },
   { value: "commentGroup", label: "Comment Group", available: true },
   { value: "conditions", label: "Conditions", available: false },
-  { value: "departmentType", label: "Department Type", available: false },
+  { value: "departmentType", label: "Department Type", available: true },
   { value: "emailMessage", label: "Email Message", available: true },
   { value: "formLayoutEditor", label: "Form Layout Editor", available: true },
   { value: "guideSheet", label: "Guide Sheet", available: true },
@@ -888,6 +902,21 @@ function makeBlankRefDocumentEntry(): RefDocumentZipEntry {
   };
 }
 
+function makeBlankDepartmentTypeEntry(): DepartmentTypeZipEntry {
+  return {
+    path: "DepartMentTypeModel.xml",
+    kind: "departmentType",
+    listAttrs: {
+      version: "9.0.0",
+      minorVersion: "26",
+      exportUser: "",
+      exportDateTime: "",
+      description: "null",
+    },
+    records: [],
+  };
+}
+
 function validateReferenceMaskEntries(entries: ReferenceMaskZipEntry[]): string | null {
   for (const entry of entries) {
     for (const record of entry.records) {
@@ -1286,6 +1315,18 @@ function validateRefDocumentEntries(entries: RefDocumentZipEntry[]): string | nu
   return null;
 }
 
+function validateDepartmentTypeEntries(entries: DepartmentTypeZipEntry[]): string | null {
+  for (const entry of entries) {
+    for (const record of entry.records) {
+      const row = toDepartmentTypeRow(record);
+      if (!row.departMentTypeName.trim()) {
+        return `"${entry.path}" has a Department Type with no Department Type Name set — every row needs a name before export.`;
+      }
+    }
+  }
+  return null;
+}
+
 function withZipExtension(name: string): string {
   const trimmed = name.trim();
   if (!trimmed) return "export.zip";
@@ -1416,6 +1457,20 @@ const CAP_TYPE_COLUMNS: FlatGridColumnMeta[] = [
   },
   { field: "udCode3", headerName: "UD Code 3", editable: true, hide: true },
   { field: "resId", headerName: "Res ID", editable: true, hide: true },
+];
+
+const DEPARTMENT_TYPE_COLUMNS: FlatGridColumnMeta[] = [
+  { field: "departMentTypeName", headerName: "Department Type Name", editable: true },
+  { field: "agencyCode", headerName: "Agency Code", editable: true, hide: true },
+  { field: "bureauCode", headerName: "Bureau Code", editable: true, hide: true },
+  { field: "divisionCode", headerName: "Division Code", editable: true, hide: true },
+  { field: "groupCode", headerName: "Group Code", editable: true, hide: true },
+  { field: "officeCode", headerName: "Office Code", editable: true, hide: true },
+  { field: "sectionCode", headerName: "Section Code", editable: true, hide: true },
+  { field: "subgroupCode", headerName: "Subgroup Code", editable: true, hide: true },
+  { field: "serviceProviderCode", headerName: "Agency ID", editable: true, hide: true },
+  { field: "subGroupDescription", headerName: "Subgroup Description", editable: true, hide: true },
+  { field: "departMentTypeKey", headerName: "Department Type Key", editable: false, hide: true },
 ];
 
 export default function Home() {
@@ -1613,7 +1668,9 @@ export default function Home() {
                                                           ? makeBlankInspectionGroupEntry()
                                                           : category === "refDocument"
                                                             ? makeBlankRefDocumentEntry()
-                                                            : null;
+                                                            : category === "departmentType"
+                                                              ? makeBlankDepartmentTypeEntry()
+                                                              : null;
       if (!blankEntry) return;
       if (
         zipResult &&
@@ -1724,6 +1781,9 @@ export default function Home() {
   const refDocumentEntries = editableEntries.filter(
     (en): en is RefDocumentZipEntry => en.kind === "refDocument"
   );
+  const departmentTypeEntries = editableEntries.filter(
+    (en): en is DepartmentTypeZipEntry => en.kind === "departmentType"
+  );
 
   const sensitiveMatches = zipResult
     ? detectSensitiveEntries(zipResult.entries.map((en) => en.path))
@@ -1770,7 +1830,8 @@ export default function Home() {
       validateCapTypeEntries(capTypeEntries) ??
       validateFormLayoutEditorEntries(formLayoutEditorEntries) ??
       validateInspectionGroupEntries(inspectionGroupEntries) ??
-      validateRefDocumentEntries(refDocumentEntries);
+      validateRefDocumentEntries(refDocumentEntries) ??
+      validateDepartmentTypeEntries(departmentTypeEntries);
     if (validationError) {
       setError(validationError);
       return;
@@ -1841,6 +1902,7 @@ export default function Home() {
     formLayoutEditorEntries,
     inspectionGroupEntries,
     refDocumentEntries,
+    departmentTypeEntries,
   ]);
 
   // Cascading on every keystroke would be wasteful (it touches every
@@ -2335,7 +2397,7 @@ export default function Home() {
               gridThemeClass={gridThemeClass}
               agencyId={agencyId}
             />
-          ) : (
+          ) : activeEntry.kind === "refDocument" ? (
             <RefDocumentGrid
               key={activeEntry.path}
               ref={gridRef}
@@ -2343,6 +2405,25 @@ export default function Home() {
               onChange={handleDataChange}
               gridThemeClass={gridThemeClass}
               agencyId={agencyId}
+            />
+          ) : (
+            <FlatGrid
+              key={activeEntry.path}
+              ref={gridRef}
+              records={activeEntry.records}
+              onChange={handleDataChange}
+              gridThemeClass={gridThemeClass}
+              agencyId={agencyId}
+              columnMeta={DEPARTMENT_TYPE_COLUMNS}
+              toRow={toDepartmentTypeRow}
+              setField={setDepartmentTypeField}
+              agencyIdField="serviceProviderCode"
+              createNode={createDepartmentTypeNode}
+              nextRefIdNumber={nextRefIdNumberDepartmentType}
+              findByUid={findDepartmentTypeByUid}
+              deleteNode={deleteDepartmentType}
+              toolbarLabel="Department Types"
+              addButtonLabel="+ Add Department Type"
             />
           )
         ) : (
