@@ -15,11 +15,22 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
+  // Lets relative/asset URLs in metadata resolve correctly, and gives
+  // Next.js a base for alternates.canonical below. This app is reachable
+  // at both theperpetualhive.com/ImportEase (the public URL) and the raw
+  // *.vercel.app deployment URL — the canonical tag tells search engines
+  // to consolidate ranking on the public domain rather than treating them
+  // as duplicate content.
+  metadataBase: new URL("https://theperpetualhive.com"),
   title: "ImportEase",
   description: "Addon tool for Accela Configuration Manager",
+  alternates: {
+    canonical: "/ImportEase",
+  },
   openGraph: {
     title: "ImportEase",
     description: "Addon tool for Accela Configuration Manager",
+    url: "/ImportEase",
   },
   twitter: {
     card: "summary",
