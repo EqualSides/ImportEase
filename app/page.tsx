@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import StandardChoiceGrid from "@/components/StandardChoiceGrid";
 import SharedDropDownGrid from "@/components/SharedDropDownGrid";
+import RefAddressTypeGroupGrid from "@/components/RefAddressTypeGroupGrid";
+import FlatGrid, { type FlatGridColumnMeta } from "@/components/FlatGrid";
 import {
   getStandardChoiceValueNodes,
   inferCommonAgencyId as inferCommonAgencyIdStandardChoice,
@@ -15,35 +17,81 @@ import {
   toSharedDropDownRow,
   toSharedDropDownValueRow,
 } from "@/lib/xml/sharedDropDownList";
+import {
+  createOrganizationAgencyNode,
+  deleteOrganizationAgency,
+  findOrganizationAgencyByUid,
+  inferCommonAgencyId as inferCommonAgencyIdOrgAgency,
+  nextRefIdNumber as nextRefIdNumberOrgAgency,
+  setOrganizationAgencyField,
+  toOrganizationAgencyRow,
+} from "@/lib/xml/organizationAgency";
+import {
+  createInspRelateInspNode,
+  deleteInspRelateInsp,
+  findInspRelateInspByUid,
+  inferCommonAgencyId as inferCommonAgencyIdInspRelateInsp,
+  nextRefIdNumber as nextRefIdNumberInspRelateInsp,
+  setInspRelateInspField,
+  toInspRelateInspRow,
+} from "@/lib/xml/inspRelateInsp";
+import {
+  getRefAddressTypeNodes,
+  inferCommonAgencyId as inferCommonAgencyIdRefAddressTypeGroup,
+  toRefAddressTypeGroupRow,
+  toRefAddressTypeRow,
+} from "@/lib/xml/refAddressTypeGroup";
 import { detectSensitiveEntries } from "@/lib/sensitiveFiles";
 import { exportZipInWorker, parseZipInWorker } from "@/lib/worker/client";
 import type {
+  InspRelateInspZipEntry,
+  OrganizationAgencyZipEntry,
   ParseZipResult,
+  RefAddressTypeGroupZipEntry,
   SharedDropDownZipEntry,
   StandardChoiceZipEntry,
   ZipEntryData,
 } from "@/lib/types";
 
-/** Both grid components expose exactly this shape via forwardRef — a shared
- * structural type lets page.tsx hold one ref regardless of which category's
- * grid is currently mounted. */
+/** Every grid component exposes exactly this shape via forwardRef — a
+ * shared structural type lets page.tsx hold one ref regardless of which
+ * category's grid is currently mounted. */
 interface GridHandle {
   applyAgencyIdToAll: (value: string) => void;
 }
 
-type EditableZipEntry = StandardChoiceZipEntry | SharedDropDownZipEntry;
+type EditableZipEntry =
+  | StandardChoiceZipEntry
+  | SharedDropDownZipEntry
+  | OrganizationAgencyZipEntry
+  | InspRelateInspZipEntry
+  | RefAddressTypeGroupZipEntry;
 
 function isEditableEntry(entry: ZipEntryData): entry is EditableZipEntry {
-  return entry.kind === "standardChoice" || entry.kind === "sharedDropDown";
+  return (
+    entry.kind === "standardChoice" ||
+    entry.kind === "sharedDropDown" ||
+    entry.kind === "organizationAgency" ||
+    entry.kind === "inspRelateInsp" ||
+    entry.kind === "refAddressTypeGroup"
+  );
 }
 
 /** Dispatches to the right model's Agency ID field per entry kind — see the
  * per-model field-name-variance note in lib/xml/sharedDropDownList.ts. */
 function inferAgencyIdForEntry(entry: EditableZipEntry): string {
-  if (entry.kind === "standardChoice") {
-    return inferCommonAgencyIdStandardChoice(entry.records.map(toStandardChoiceRow));
+  switch (entry.kind) {
+    case "standardChoice":
+      return inferCommonAgencyIdStandardChoice(entry.records.map(toStandardChoiceRow));
+    case "sharedDropDown":
+      return inferCommonAgencyIdSharedDropDown(entry.records.map(toSharedDropDownRow));
+    case "organizationAgency":
+      return inferCommonAgencyIdOrgAgency(entry.records.map(toOrganizationAgencyRow));
+    case "inspRelateInsp":
+      return inferCommonAgencyIdInspRelateInsp(entry.records.map(toInspRelateInspRow));
+    case "refAddressTypeGroup":
+      return inferCommonAgencyIdRefAddressTypeGroup(entry.records.map(toRefAddressTypeGroupRow));
   }
-  return inferCommonAgencyIdSharedDropDown(entry.records.map(toSharedDropDownRow));
 }
 
 const THEME_STORAGE_KEY = "importease-theme";
@@ -57,9 +105,9 @@ const THEME_STORAGE_KEY = "importease-theme";
 const CATEGORY_OPTIONS: { value: string; label: string; available: boolean }[] = [
   { value: "standardChoice", label: "Standard Choice", available: true },
   { value: "sharedDropDown", label: "Shared Drop-down List", available: true },
-  { value: "refAddressTypeGroup", label: "Ref Address Type Group", available: false },
-  { value: "orgAgency", label: "Organization/Agency", available: false },
-  { value: "inspRelateInsp", label: "Insp Relate Insp", available: false },
+  { value: "refAddressTypeGroup", label: "Ref Address Type Group", available: true },
+  { value: "organizationAgency", label: "Organization/Agency", available: true },
+  { value: "inspRelateInsp", label: "Insp Relate Insp", available: true },
   { value: "conditions", label: "Conditions", available: false },
   { value: "rapoTemplate", label: "RAPO Template", available: false },
   { value: "timeGroup", label: "Time Group", available: false },
@@ -141,6 +189,51 @@ function makeBlankSharedDropDownEntry(): SharedDropDownZipEntry {
   };
 }
 
+function makeBlankOrganizationAgencyEntry(): OrganizationAgencyZipEntry {
+  return {
+    path: "OrganizationAgencyModel.xml",
+    kind: "organizationAgency",
+    listAttrs: {
+      version: "9.0.0",
+      minorVersion: "26",
+      exportUser: "",
+      exportDateTime: "",
+      description: "null",
+    },
+    records: [],
+  };
+}
+
+function makeBlankInspRelateInspEntry(): InspRelateInspZipEntry {
+  return {
+    path: "InspRelateInspModel.xml",
+    kind: "inspRelateInsp",
+    listAttrs: {
+      version: "9.0.0",
+      minorVersion: "26",
+      exportUser: "",
+      exportDateTime: "",
+      description: "null",
+    },
+    records: [],
+  };
+}
+
+function makeBlankRefAddressTypeGroupEntry(): RefAddressTypeGroupZipEntry {
+  return {
+    path: "RefAddressTypeGroupModel.xml",
+    kind: "refAddressTypeGroup",
+    listAttrs: {
+      version: "9.0.0",
+      minorVersion: "26",
+      exportUser: "",
+      exportDateTime: "",
+      description: "null",
+    },
+    records: [],
+  };
+}
+
 // Fields the schema doc marks "always" on sharedDropDownListModel/
 // sharedDropDownValue — required before export, same treatment as Standard
 // Choice's Name/Value requirement.
@@ -155,6 +248,48 @@ function validateSharedDropDownEntries(entries: SharedDropDownZipEntry[]): strin
         const valueRow = toSharedDropDownValueRow(valueNode);
         if (!valueRow.bizdomainValue.trim()) {
           return `"${entry.path}" — "${row.name || "(unnamed)"}" has a value with no Value set — every value needs a Value before export.`;
+        }
+      }
+    }
+  }
+  return null;
+}
+
+function validateOrganizationAgencyEntries(entries: OrganizationAgencyZipEntry[]): string | null {
+  for (const entry of entries) {
+    for (const record of entry.records) {
+      const row = toOrganizationAgencyRow(record);
+      if (!row.agencyCode.trim()) {
+        return `"${entry.path}" has an Organization/Agency row with no Agency Code set — every row needs an Agency Code before export.`;
+      }
+    }
+  }
+  return null;
+}
+
+function validateInspRelateInspEntries(entries: InspRelateInspZipEntry[]): string | null {
+  for (const entry of entries) {
+    for (const record of entry.records) {
+      const row = toInspRelateInspRow(record);
+      if (!row.type.trim()) {
+        return `"${entry.path}" has an Insp Relate Insp row with no Type set — every row needs a Type before export.`;
+      }
+    }
+  }
+  return null;
+}
+
+function validateRefAddressTypeGroupEntries(entries: RefAddressTypeGroupZipEntry[]): string | null {
+  for (const entry of entries) {
+    for (const record of entry.records) {
+      const row = toRefAddressTypeGroupRow(record);
+      if (!row.addrGroup.trim()) {
+        return `"${entry.path}" has an Address Type Group with no Address Group set — every group needs a name before export.`;
+      }
+      for (const typeNode of getRefAddressTypeNodes(record)) {
+        const typeRow = toRefAddressTypeRow(typeNode);
+        if (!typeRow.addrType.trim()) {
+          return `"${entry.path}" — "${row.addrGroup}" has an address type with no Address Type set — every type needs one before export.`;
         }
       }
     }
@@ -197,6 +332,32 @@ function mergeParseResults(base: ParseZipResult | null, addition: ParseZipResult
   }
   return { zipName: base.zipName, entries: mergedEntries };
 }
+
+// FlatGrid column config for the two truly-flat categories (see
+// components/FlatGrid.tsx) — kept here, not in the lib modules, since it's
+// purely a UI concern, same split StandardChoiceGrid/SharedDropDownGrid use.
+const ORG_AGENCY_COLUMNS: FlatGridColumnMeta[] = [
+  { field: "refId", headerName: "Ref ID", editable: false, hide: true },
+  { field: "agencyCode", headerName: "Agency Code", editable: true },
+  { field: "agencyName", headerName: "Agency Name", editable: true },
+  { field: "serviceProviderCode", headerName: "Agency ID", editable: true, hide: true },
+];
+
+const INSP_RELATE_INSP_COLUMNS: FlatGridColumnMeta[] = [
+  { field: "refId", headerName: "Ref ID", editable: false, hide: true },
+  { field: "type", headerName: "Type", editable: true },
+  { field: "parentInspType", headerName: "Parent Insp Type", editable: true },
+  { field: "childInspType", headerName: "Child Insp Type", editable: true },
+  { field: "inspResult", headerName: "Insp Result", editable: true },
+  { field: "inspResultGroup", headerName: "Result Group", editable: true },
+  { field: "inAdvance", headerName: "In Advance", editable: true },
+  { field: "intervalDay", headerName: "Interval Day", editable: true },
+  { field: "isAuto", headerName: "Auto", editable: true },
+  { field: "isRelated", headerName: "Related", editable: true },
+  { field: "initDateType", headerName: "Init Date Type", editable: true },
+  { field: "initStatus", headerName: "Init Status", editable: true },
+  { field: "servProvCode", headerName: "Agency ID", editable: true, hide: true },
+];
 
 export default function Home() {
   const [zipResult, setZipResult] = useState<ParseZipResult | null>(null);
@@ -345,7 +506,13 @@ export default function Home() {
           ? makeBlankStandardChoiceEntry()
           : category === "sharedDropDown"
             ? makeBlankSharedDropDownEntry()
-            : null;
+            : category === "organizationAgency"
+              ? makeBlankOrganizationAgencyEntry()
+              : category === "inspRelateInsp"
+                ? makeBlankInspRelateInspEntry()
+                : category === "refAddressTypeGroup"
+                  ? makeBlankRefAddressTypeGroupEntry()
+                  : null;
       if (!blankEntry) return;
       if (
         zipResult &&
@@ -384,6 +551,15 @@ export default function Home() {
   const sharedDropDownEntries = editableEntries.filter(
     (en): en is SharedDropDownZipEntry => en.kind === "sharedDropDown"
   );
+  const organizationAgencyEntries = editableEntries.filter(
+    (en): en is OrganizationAgencyZipEntry => en.kind === "organizationAgency"
+  );
+  const inspRelateInspEntries = editableEntries.filter(
+    (en): en is InspRelateInspZipEntry => en.kind === "inspRelateInsp"
+  );
+  const refAddressTypeGroupEntries = editableEntries.filter(
+    (en): en is RefAddressTypeGroupZipEntry => en.kind === "refAddressTypeGroup"
+  );
 
   const sensitiveMatches = zipResult
     ? detectSensitiveEntries(zipResult.entries.map((en) => en.path))
@@ -406,7 +582,10 @@ export default function Home() {
     }
     const validationError =
       validateStandardChoiceEntries(standardChoiceEntries) ??
-      validateSharedDropDownEntries(sharedDropDownEntries);
+      validateSharedDropDownEntries(sharedDropDownEntries) ??
+      validateOrganizationAgencyEntries(organizationAgencyEntries) ??
+      validateInspRelateInspEntries(inspRelateInspEntries) ??
+      validateRefAddressTypeGroupEntries(refAddressTypeGroupEntries);
     if (validationError) {
       setError(validationError);
       return;
@@ -453,6 +632,9 @@ export default function Home() {
     sensitiveDecisions,
     standardChoiceEntries,
     sharedDropDownEntries,
+    organizationAgencyEntries,
+    inspRelateInspEntries,
+    refAddressTypeGroupEntries,
   ]);
 
   // Cascading on every keystroke would be wasteful (it touches every
@@ -680,7 +862,7 @@ export default function Home() {
               gridThemeClass={gridThemeClass}
               agencyId={agencyId}
             />
-          ) : (
+          ) : activeEntry.kind === "sharedDropDown" ? (
             <SharedDropDownGrid
               key={activeEntry.path}
               ref={gridRef}
@@ -689,11 +871,58 @@ export default function Home() {
               gridThemeClass={gridThemeClass}
               agencyId={agencyId}
             />
+          ) : activeEntry.kind === "refAddressTypeGroup" ? (
+            <RefAddressTypeGroupGrid
+              key={activeEntry.path}
+              ref={gridRef}
+              records={activeEntry.records}
+              onChange={handleDataChange}
+              gridThemeClass={gridThemeClass}
+              agencyId={agencyId}
+            />
+          ) : activeEntry.kind === "organizationAgency" ? (
+            <FlatGrid
+              key={activeEntry.path}
+              ref={gridRef}
+              records={activeEntry.records}
+              onChange={handleDataChange}
+              gridThemeClass={gridThemeClass}
+              agencyId={agencyId}
+              columnMeta={ORG_AGENCY_COLUMNS}
+              toRow={toOrganizationAgencyRow}
+              setField={setOrganizationAgencyField}
+              agencyIdField="serviceProviderCode"
+              createNode={createOrganizationAgencyNode}
+              nextRefIdNumber={nextRefIdNumberOrgAgency}
+              findByUid={findOrganizationAgencyByUid}
+              deleteNode={deleteOrganizationAgency}
+              toolbarLabel="Organization/Agency"
+              addButtonLabel="+ Add Agency"
+            />
+          ) : (
+            <FlatGrid
+              key={activeEntry.path}
+              ref={gridRef}
+              records={activeEntry.records}
+              onChange={handleDataChange}
+              gridThemeClass={gridThemeClass}
+              agencyId={agencyId}
+              columnMeta={INSP_RELATE_INSP_COLUMNS}
+              toRow={toInspRelateInspRow}
+              setField={setInspRelateInspField}
+              agencyIdField="servProvCode"
+              createNode={createInspRelateInspNode}
+              nextRefIdNumber={nextRefIdNumberInspRelateInsp}
+              findByUid={findInspRelateInspByUid}
+              deleteNode={deleteInspRelateInsp}
+              toolbarLabel="Insp Relate Insp"
+              addButtonLabel="+ Add Rule"
+            />
           )
         ) : (
           <div className="main-empty">
             {zipResult
-              ? "No Standard Choices or Shared Drop-down List file was recognized in this zip. Everything else will still be passed through untouched on export."
+              ? "No recognized editable file was found in this zip. Everything else will still be passed through untouched on export."
               : "Upload or drag in a Configuration Manager export .zip, or start a blank file above, to begin."}
           </div>
         )}

@@ -73,6 +73,28 @@ export function getChildText(children: PNode[], tag: string): string {
 }
 
 /**
+ * Some fields (e.g. InspRelateInspModel's `childInspType`/`parentInspType`)
+ * wrap their actual text one level deeper, inside a fixed inner tag —
+ * `<childInspType><virtualString>...</virtualString></childInspType>` rather
+ * than holding the text directly. These read/write through that one level
+ * of wrapping so the field can still be treated as a single grid cell.
+ */
+export function getNestedText(children: PNode[], tag: string, innerTag: string): string {
+  const child = findChildByTag(children, tag);
+  if (!child) return "";
+  return getChildText(getChildren(child), innerTag);
+}
+
+export function setNestedText(children: PNode[], tag: string, innerTag: string, value: string) {
+  let child = findChildByTag(children, tag);
+  if (!child) {
+    child = { [tag]: [] };
+    children.push(child);
+  }
+  setChildText(getChildren(child), innerTag, value);
+}
+
+/**
  * `value` is the logical (decoded) string as seen in the grid — it gets
  * entity-encoded here before being stored. Untouched fields never pass
  * through this function, so their stored text stays exactly as the parser

@@ -9,15 +9,46 @@ import {
   isSharedDropDownXml,
   parseSharedDropDownXml,
 } from "../xml/sharedDropDownList";
+import {
+  buildExportedOrganizationAgencyXml,
+  isOrganizationAgencyXml,
+  parseOrganizationAgencyXml,
+} from "../xml/organizationAgency";
+import {
+  buildExportedInspRelateInspXml,
+  isInspRelateInspXml,
+  parseInspRelateInspXml,
+} from "../xml/inspRelateInsp";
+import {
+  buildExportedRefAddressTypeGroupXml,
+  isRefAddressTypeGroupXml,
+  parseRefAddressTypeGroupXml,
+} from "../xml/refAddressTypeGroup";
 import type { ParseZipResult, ZipEntryData } from "../types";
 
 /**
- * Detection is content-based, not filename-based: real Configuration Manager
- * exports are named after the export job (e.g. "sc4richard.xml"), not after
- * the model type. Anything that isn't a shape this tool knows how to parse
- * is passed through untouched, per CLAUDE.md's explicit non-goal of
- * rejecting files this tool doesn't know how to parse yet.
+ * Each of these detectors sniffs actual element content, not the filename —
+ * real Configuration Manager exports are named after the export job (e.g.
+ * "sc4richard.xml"), not after the model type. Anything that doesn't match
+ * a known shape is passed through untouched, per CLAUDE.md's explicit
+ * non-goal of rejecting files this tool doesn't know how to parse yet.
  */
+const DETECTORS: {
+  kind: Exclude<ZipEntryData["kind"], "passthrough">;
+  sniff: (text: string) => boolean;
+  parse: (text: string) => { listAttrs: any; records: any[] };
+}[] = [
+  { kind: "standardChoice", sniff: isStandardChoiceXml, parse: parseStandardChoiceXml },
+  { kind: "sharedDropDown", sniff: isSharedDropDownXml, parse: parseSharedDropDownXml },
+  { kind: "organizationAgency", sniff: isOrganizationAgencyXml, parse: parseOrganizationAgencyXml },
+  { kind: "inspRelateInsp", sniff: isInspRelateInspXml, parse: parseInspRelateInspXml },
+  {
+    kind: "refAddressTypeGroup",
+    sniff: isRefAddressTypeGroupXml,
+    parse: parseRefAddressTypeGroupXml,
+  },
+];
+
 export async function parseUploadedZip(
   buffer: ArrayBuffer,
   zipName: string
@@ -29,44 +60,34 @@ export async function parseUploadedZip(
 
   for (const path of paths) {
     const file = zip.files[path];
+    let matched = false;
 
     if (path.toLowerCase().endsWith(".xml")) {
       const text = await file.async("string");
 
-      if (isStandardChoiceXml(text)) {
+      for (const detector of DETECTORS) {
+        if (!detector.sniff(text)) continue;
         try {
-          const parsed = parseStandardChoiceXml(text);
+          const parsed = detector.parse(text);
           entries.push({
             path,
-            kind: "standardChoice",
+            kind: detector.kind,
             listAttrs: parsed.listAttrs,
             records: parsed.records,
-          });
-          continue;
+          } as ZipEntryData);
+          matched = true;
+          break;
         } catch {
-          // Looked like a StandardChoice file but didn't parse cleanly — pass it through
-          // untouched rather than failing the whole upload.
-        }
-      }
-
-      if (isSharedDropDownXml(text)) {
-        try {
-          const parsed = parseSharedDropDownXml(text);
-          entries.push({
-            path,
-            kind: "sharedDropDown",
-            listAttrs: parsed.listAttrs,
-            records: parsed.records,
-          });
-          continue;
-        } catch {
-          // Same — pass through untouched rather than failing the whole upload.
+          // Looked like a match but didn't parse cleanly — fall through to
+          // passthrough rather than failing the whole upload.
         }
       }
     }
 
-    const bytes = await file.async("uint8array");
-    entries.push({ path, kind: "passthrough", bytes });
+    if (!matched) {
+      const bytes = await file.async("uint8array");
+      entries.push({ path, kind: "passthrough", bytes });
+    }
   }
 
   return { zipName, entries };
@@ -77,14 +98,27 @@ export async function buildExportZip(entries: ZipEntryData[]): Promise<Uint8Arra
   const zip = new JSZip();
   for (const entry of entries) {
     if (entry.kind === "standardChoice") {
-      const xml = buildExportedXml({ listAttrs: entry.listAttrs, records: entry.records });
-      zip.file(entry.path, xml);
+      zip.file(entry.path, buildExportedXml({ listAttrs: entry.listAttrs, records: entry.records }));
     } else if (entry.kind === "sharedDropDown") {
-      const xml = buildExportedSharedDropDownXml({
-        listAttrs: entry.listAttrs,
-        records: entry.records,
-      });
-      zip.file(entry.path, xml);
+      zip.file(
+        entry.path,
+        buildExportedSharedDropDownXml({ listAttrs: entry.listAttrs, records: entry.records })
+      );
+    } else if (entry.kind === "organizationAgency") {
+      zip.file(
+        entry.path,
+        buildExportedOrganizationAgencyXml({ listAttrs: entry.listAttrs, records: entry.records })
+      );
+    } else if (entry.kind === "inspRelateInsp") {
+      zip.file(
+        entry.path,
+        buildExportedInspRelateInspXml({ listAttrs: entry.listAttrs, records: entry.records })
+      );
+    } else if (entry.kind === "refAddressTypeGroup") {
+      zip.file(
+        entry.path,
+        buildExportedRefAddressTypeGroupXml({ listAttrs: entry.listAttrs, records: entry.records })
+      );
     } else {
       zip.file(entry.path, entry.bytes);
     }

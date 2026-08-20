@@ -14,6 +14,27 @@ export interface SharedDropDownZipEntry {
   records: PNode[];
 }
 
+export interface OrganizationAgencyZipEntry {
+  path: string;
+  kind: "organizationAgency";
+  listAttrs: ListAttrs;
+  records: PNode[];
+}
+
+export interface InspRelateInspZipEntry {
+  path: string;
+  kind: "inspRelateInsp";
+  listAttrs: ListAttrs;
+  records: PNode[];
+}
+
+export interface RefAddressTypeGroupZipEntry {
+  path: string;
+  kind: "refAddressTypeGroup";
+  listAttrs: ListAttrs;
+  records: PNode[];
+}
+
 export interface PassthroughZipEntry {
   path: string;
   kind: "passthrough";
@@ -24,7 +45,13 @@ export interface PassthroughZipEntry {
   bytes: Uint8Array;
 }
 
-export type ZipEntryData = StandardChoiceZipEntry | SharedDropDownZipEntry | PassthroughZipEntry;
+export type ZipEntryData =
+  | StandardChoiceZipEntry
+  | SharedDropDownZipEntry
+  | OrganizationAgencyZipEntry
+  | InspRelateInspZipEntry
+  | RefAddressTypeGroupZipEntry
+  | PassthroughZipEntry;
 
 export interface ParseZipResult {
   zipName: string;
