@@ -61,15 +61,17 @@ export async function checkSubscriptionStatus(userId: string): Promise<Subscript
 }
 
 // The admin Edge Functions (admin-create-account, admin-list-accounts)
-// reject an expired access token with 403 "Forbidden" — supabase-js's
-// background auto-refresh timer is throttled while a browser tab is
-// backgrounded/inactive, so a long-idle Admin panel session can end up
-// sending a stale token even though the user is still legitimately
-// signed in. Surfacing that as a raw "Edge Function returned a non-2xx
-// status code" is both unhelpful and unnecessary — a proactive
-// refresh-and-retry silently recovers the common case, and only a
-// genuinely invalid/expired session (refresh itself fails) surfaces an
-// error to the user.
+// reject an expired access token with 403 "Forbidden". A stale *access*
+// token is recoverable (refresh and retry), but the daniel/admin login
+// is a shared credential that gets signed in from multiple browsers/tabs
+// at once — and Supabase's refresh-token rotation means the *refresh*
+// token itself can go stale too: as soon as one tab uses it, every other
+// tab still holding the old value gets a permanent 400 "Refresh Token
+// Not Found" on its next refresh, no matter how many times it retries.
+// That case isn't self-healable — the local session is just dead — so
+// after one retry attempt we sign out locally (clearing the dead
+// session so the UI falls back to the sign-in screen) rather than
+// looping forever on an error that will never clear itself.
 export async function invokeAdminFunction<T = any>(
   name: string,
   body: Record<string, unknown>
@@ -79,7 +81,16 @@ export async function invokeAdminFunction<T = any>(
   if (!firstFailed) return first;
 
   const { error: refreshError } = await supabase.auth.refreshSession();
-  if (refreshError) return first;
+  if (refreshError) {
+    await supabase.auth.signOut();
+    return { data: null, error: { message: "Your session has expired. Please sign in again." } };
+  }
 
-  return supabase.functions.invoke<T>(name, { body });
+  const second = await supabase.functions.invoke<T>(name, { body });
+  const secondFailed = !!second.error || (second.data as any)?.error === "Forbidden";
+  if (secondFailed) {
+    await supabase.auth.signOut();
+    return { data: null, error: { message: "Your session has expired. Please sign in again." } };
+  }
+  return second;
 }
