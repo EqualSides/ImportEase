@@ -14,6 +14,7 @@ import RefLookupTableGrid from "@/components/RefLookupTableGrid";
 import GuideSheetGrid from "@/components/GuideSheetGrid";
 import RAPOTemplateGrid from "@/components/RAPOTemplateGrid";
 import SmartChoiceGroupGrid from "@/components/SmartChoiceGroupGrid";
+import StandardCommentGroupGrid from "@/components/StandardCommentGroupGrid";
 import FlatGrid, { type FlatGridColumnMeta } from "@/components/FlatGrid";
 import {
   getStandardChoiceValueNodes,
@@ -144,6 +145,13 @@ import {
   toSmartChoiceRow,
   toSmartChoiceOptionRow,
 } from "@/lib/xml/smartChoiceGroup";
+import {
+  ARM_KEYS as STANDARD_COMMENT_GROUP_ARM_KEYS,
+  getArmNodes as getStandardCommentGroupArmNodes,
+  inferCommonAgencyId as inferCommonAgencyIdStandardCommentGroup,
+  toStandardCommentGroupRow,
+  toCommentGroupEntityRow,
+} from "@/lib/xml/standardCommentGroup";
 import { detectSensitiveEntries } from "@/lib/sensitiveFiles";
 import { exportZipInWorker, parseZipInWorker } from "@/lib/worker/client";
 import type {
@@ -164,6 +172,7 @@ import type {
   SharedDropDownZipEntry,
   SmartChoiceGroupZipEntry,
   StandardChoiceZipEntry,
+  StandardCommentGroupZipEntry,
   TimeGroupZipEntry,
   TimeTypesZipEntry,
   ZipEntryData,
@@ -194,7 +203,8 @@ type EditableZipEntry =
   | RefLookupTableZipEntry
   | GuideSheetZipEntry
   | RAPOTemplateZipEntry
-  | SmartChoiceGroupZipEntry;
+  | SmartChoiceGroupZipEntry
+  | StandardCommentGroupZipEntry;
 
 function isEditableEntry(entry: ZipEntryData): entry is EditableZipEntry {
   return (
@@ -215,7 +225,8 @@ function isEditableEntry(entry: ZipEntryData): entry is EditableZipEntry {
     entry.kind === "refLookupTable" ||
     entry.kind === "guideSheet" ||
     entry.kind === "rapoTemplate" ||
-    entry.kind === "smartChoiceGroup"
+    entry.kind === "smartChoiceGroup" ||
+    entry.kind === "standardCommentGroup"
   );
 }
 
@@ -263,6 +274,8 @@ function inferAgencyIdForEntry(entry: EditableZipEntry): string {
       return inferCommonAgencyIdRAPOTemplate(entry.records.map(toRAPOTemplateRow));
     case "smartChoiceGroup":
       return inferCommonAgencyIdSmartChoiceGroup(entry.records.map(toSmartChoiceGroupRow));
+    case "standardCommentGroup":
+      return inferCommonAgencyIdStandardCommentGroup(entry.records.map(toStandardCommentGroupRow));
   }
 }
 
@@ -289,7 +302,7 @@ const CATEGORY_OPTIONS: { value: string; label: string; available: boolean }[] =
   { value: "refLookupTable", label: "Ref Lookup Table", available: true },
   { value: "emailMessage", label: "Email Message", available: true },
   { value: "userProfiles", label: "User Profiles", available: false },
-  { value: "standardCommentGroup", label: "Standard Comment Group", available: false },
+  { value: "standardCommentGroup", label: "Standard Comment Group", available: true },
   { value: "departmentType", label: "Department Type", available: false },
   { value: "user", label: "User", available: false },
   { value: "refInspectionResultGroup", label: "Ref Inspection Result Group", available: true },
@@ -664,6 +677,21 @@ function makeBlankSmartChoiceGroupEntry(): SmartChoiceGroupZipEntry {
   };
 }
 
+function makeBlankStandardCommentGroupEntry(): StandardCommentGroupZipEntry {
+  return {
+    path: "StandardCommentGroupModel.xml",
+    kind: "standardCommentGroup",
+    listAttrs: {
+      version: "9.0.0",
+      minorVersion: "26",
+      exportUser: "",
+      exportDateTime: "",
+      description: "null",
+    },
+    records: [],
+  };
+}
+
 function validateReferenceMaskEntries(entries: ReferenceMaskZipEntry[]): string | null {
   for (const entry of entries) {
     for (const record of entry.records) {
@@ -888,6 +916,28 @@ function validateSmartChoiceGroupEntries(entries: SmartChoiceGroupZipEntry[]): s
           const optRow = toSmartChoiceOptionRow(optNode);
           if (!optRow.functionOption.trim()) {
             return `"${entry.path}" — "${row.groupCode}" / "${choiceRow.functionName}" has an option with no Function Option set — every option needs one before export.`;
+          }
+        }
+      }
+    }
+  }
+  return null;
+}
+
+function validateStandardCommentGroupEntries(
+  entries: StandardCommentGroupZipEntry[]
+): string | null {
+  for (const entry of entries) {
+    for (const record of entry.records) {
+      const row = toStandardCommentGroupRow(record);
+      if (!row.groupName.trim()) {
+        return `"${entry.path}" has a Standard Comment Group with no Group Name set — every group needs a Group Name before export.`;
+      }
+      for (const arm of STANDARD_COMMENT_GROUP_ARM_KEYS) {
+        for (const entityNode of getStandardCommentGroupArmNodes(record, arm)) {
+          const entityRow = toCommentGroupEntityRow(entityNode);
+          if (!entityRow.entityData.trim()) {
+            return `"${entry.path}" — "${row.groupName}" has an entry with no Entity Data set — every entry needs one before export.`;
           }
         }
       }
@@ -1174,7 +1224,9 @@ export default function Home() {
                                           ? makeBlankRAPOTemplateEntry()
                                           : category === "smartChoiceGroup"
                                             ? makeBlankSmartChoiceGroupEntry()
-                                            : null;
+                                            : category === "standardCommentGroup"
+                                              ? makeBlankStandardCommentGroupEntry()
+                                              : null;
       if (!blankEntry) return;
       if (
         zipResult &&
@@ -1261,6 +1313,9 @@ export default function Home() {
   const smartChoiceGroupEntries = editableEntries.filter(
     (en): en is SmartChoiceGroupZipEntry => en.kind === "smartChoiceGroup"
   );
+  const standardCommentGroupEntries = editableEntries.filter(
+    (en): en is StandardCommentGroupZipEntry => en.kind === "standardCommentGroup"
+  );
 
   const sensitiveMatches = zipResult
     ? detectSensitiveEntries(zipResult.entries.map((en) => en.path))
@@ -1299,7 +1354,8 @@ export default function Home() {
       validateRefLookupTableEntries(refLookupTableEntries) ??
       validateGuideSheetEntries(guideSheetEntries) ??
       validateRAPOTemplateEntries(rapoTemplateEntries) ??
-      validateSmartChoiceGroupEntries(smartChoiceGroupEntries);
+      validateSmartChoiceGroupEntries(smartChoiceGroupEntries) ??
+      validateStandardCommentGroupEntries(standardCommentGroupEntries);
     if (validationError) {
       setError(validationError);
       return;
@@ -1362,6 +1418,7 @@ export default function Home() {
     guideSheetEntries,
     rapoTemplateEntries,
     smartChoiceGroupEntries,
+    standardCommentGroupEntries,
   ]);
 
   // Cascading on every keystroke would be wasteful (it touches every
@@ -1783,8 +1840,17 @@ export default function Home() {
               gridThemeClass={gridThemeClass}
               agencyId={agencyId}
             />
-          ) : (
+          ) : activeEntry.kind === "smartChoiceGroup" ? (
             <SmartChoiceGroupGrid
+              key={activeEntry.path}
+              ref={gridRef}
+              records={activeEntry.records}
+              onChange={handleDataChange}
+              gridThemeClass={gridThemeClass}
+              agencyId={agencyId}
+            />
+          ) : (
+            <StandardCommentGroupGrid
               key={activeEntry.path}
               ref={gridRef}
               records={activeEntry.records}

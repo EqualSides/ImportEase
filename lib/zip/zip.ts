@@ -73,6 +73,11 @@ import {
   isSmartChoiceGroupXml,
   parseSmartChoiceGroupXml,
 } from "../xml/smartChoiceGroup";
+import {
+  buildExportedStandardCommentGroupXml,
+  isStandardCommentGroupXml,
+  parseStandardCommentGroupXml,
+} from "../xml/standardCommentGroup";
 import type { ParseZipResult, ZipEntryData } from "../types";
 
 /**
@@ -117,6 +122,11 @@ const DETECTORS: {
   { kind: "guideSheet", sniff: isGuideSheetXml, parse: parseGuideSheetXml },
   { kind: "rapoTemplate", sniff: isRAPOTemplateXml, parse: parseRAPOTemplateXml },
   { kind: "smartChoiceGroup", sniff: isSmartChoiceGroupXml, parse: parseSmartChoiceGroupXml },
+  {
+    kind: "standardCommentGroup",
+    sniff: isStandardCommentGroupXml,
+    parse: parseStandardCommentGroupXml,
+  },
 ];
 
 export async function parseUploadedZip(
@@ -259,6 +269,11 @@ export async function buildExportZip(entries: ZipEntryData[]): Promise<Uint8Arra
       zip.file(
         entry.path,
         buildExportedSmartChoiceGroupXml({ listAttrs: entry.listAttrs, records: entry.records })
+      );
+    } else if (entry.kind === "standardCommentGroup") {
+      zip.file(
+        entry.path,
+        buildExportedStandardCommentGroupXml({ listAttrs: entry.listAttrs, records: entry.records })
       );
     } else {
       zip.file(entry.path, entry.bytes);
