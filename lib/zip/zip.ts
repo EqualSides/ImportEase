@@ -91,6 +91,11 @@ import {
   isFormLayoutEditorXml,
   parseFormLayoutEditorXml,
 } from "../xml/formLayoutEditor";
+import {
+  buildExportedInspectionGroupXml,
+  isInspectionGroupXml,
+  parseInspectionGroupXml,
+} from "../xml/inspectionGroup";
 import type { ParseZipResult, ZipEntryData } from "../types";
 
 /**
@@ -149,6 +154,7 @@ const DETECTORS: {
     sniff: isFormLayoutEditorXml,
     parse: parseFormLayoutEditorXml,
   },
+  { kind: "inspectionGroup", sniff: isInspectionGroupXml, parse: parseInspectionGroupXml },
 ];
 
 export async function parseUploadedZip(
@@ -321,6 +327,11 @@ export async function buildExportZip(entries: ZipEntryData[]): Promise<Uint8Arra
       zip.file(
         entry.path,
         buildExportedFormLayoutEditorXml({ listAttrs: entry.listAttrs, records: entry.records })
+      );
+    } else if (entry.kind === "inspectionGroup") {
+      zip.file(
+        entry.path,
+        buildExportedInspectionGroupXml({ listAttrs: entry.listAttrs, records: entry.records })
       );
     } else {
       zip.file(entry.path, entry.bytes);

@@ -19,6 +19,7 @@ import RefFeeScheduleGrid from "@/components/RefFeeScheduleGrid";
 import VirProcessGrid from "@/components/VirProcessGrid";
 import ASIGroupGrid from "@/components/ASIGroupGrid";
 import FormLayoutEditorGrid from "@/components/FormLayoutEditorGrid";
+import InspectionGroupGrid from "@/components/InspectionGroupGrid";
 import FlatGrid, { type FlatGridColumnMeta } from "@/components/FlatGrid";
 import {
   getStandardChoiceValueNodes,
@@ -194,6 +195,12 @@ import {
   toFormLayoutScreenRow,
   toFormLayoutElementRow,
 } from "@/lib/xml/formLayoutEditor";
+import {
+  getInspectionTypeNodes,
+  inferCommonAgencyId as inferCommonAgencyIdInspectionGroup,
+  toInspectionGroupRow,
+  toInspectionTypeRow,
+} from "@/lib/xml/inspectionGroup";
 import { detectSensitiveEntries } from "@/lib/sensitiveFiles";
 import { exportZipInWorker, parseZipInWorker } from "@/lib/worker/client";
 import type {
@@ -220,6 +227,7 @@ import type {
   ASIGroupZipEntry,
   CapTypeZipEntry,
   FormLayoutEditorZipEntry,
+  InspectionGroupZipEntry,
   TimeGroupZipEntry,
   TimeTypesZipEntry,
   ZipEntryData,
@@ -256,7 +264,8 @@ type EditableZipEntry =
   | VirProcessZipEntry
   | ASIGroupZipEntry
   | CapTypeZipEntry
-  | FormLayoutEditorZipEntry;
+  | FormLayoutEditorZipEntry
+  | InspectionGroupZipEntry;
 
 function isEditableEntry(entry: ZipEntryData): entry is EditableZipEntry {
   return (
@@ -283,7 +292,8 @@ function isEditableEntry(entry: ZipEntryData): entry is EditableZipEntry {
     entry.kind === "virProcess" ||
     entry.kind === "asiGroup" ||
     entry.kind === "capType" ||
-    entry.kind === "formLayoutEditor"
+    entry.kind === "formLayoutEditor" ||
+    entry.kind === "inspectionGroup"
   );
 }
 
@@ -343,6 +353,8 @@ function inferAgencyIdForEntry(entry: EditableZipEntry): string {
       return inferCommonAgencyIdCapType(entry.records.map(toCapTypeRow));
     case "formLayoutEditor":
       return inferCommonAgencyIdFormLayoutEditor(entry.records.map(toFormLayoutScreenRow));
+    case "inspectionGroup":
+      return inferCommonAgencyIdInspectionGroup(entry.records.map(toInspectionGroupRow));
   }
 }
 
@@ -368,7 +380,7 @@ const CATEGORY_OPTIONS: { value: string; label: string; available: boolean }[] =
   { value: "formLayoutEditor", label: "Form Layout Editor", available: true },
   { value: "guideSheet", label: "Guide Sheet", available: true },
   { value: "inspRelateInsp", label: "Insp Relate Insp", available: true },
-  { value: "inspectionGroup", label: "Inspection Group", available: false },
+  { value: "inspectionGroup", label: "Inspection Group", available: true },
   { value: "organizationAgency", label: "Organization/Agency", available: true },
   { value: "rapoTemplate", label: "RAPO Template", available: true },
   { value: "refAddressTypeGroup", label: "Ref Address Type Group", available: true },
@@ -834,6 +846,21 @@ function makeBlankFormLayoutEditorEntry(): FormLayoutEditorZipEntry {
   };
 }
 
+function makeBlankInspectionGroupEntry(): InspectionGroupZipEntry {
+  return {
+    path: "InspectionGroupModel.xml",
+    kind: "inspectionGroup",
+    listAttrs: {
+      version: "9.0.0",
+      minorVersion: "26",
+      exportUser: "",
+      exportDateTime: "",
+      description: "null",
+    },
+    records: [],
+  };
+}
+
 function validateReferenceMaskEntries(entries: ReferenceMaskZipEntry[]): string | null {
   for (const entry of entries) {
     for (const record of entry.records) {
@@ -1196,6 +1223,24 @@ function validateFormLayoutEditorEntries(entries: FormLayoutEditorZipEntry[]): s
   return null;
 }
 
+function validateInspectionGroupEntries(entries: InspectionGroupZipEntry[]): string | null {
+  for (const entry of entries) {
+    for (const record of entry.records) {
+      const row = toInspectionGroupRow(record);
+      if (!row.inspGroupName.trim()) {
+        return `"${entry.path}" has an Inspection Group with no Group Name set — every group needs a name before export.`;
+      }
+      for (const typeNode of getInspectionTypeNodes(record)) {
+        const typeRow = toInspectionTypeRow(typeNode);
+        if (!typeRow.inspType.trim()) {
+          return `"${entry.path}" — "${row.inspGroupName}" has an inspection type with no Inspection Type set — every type needs one before export.`;
+        }
+      }
+    }
+  }
+  return null;
+}
+
 function withZipExtension(name: string): string {
   const trimmed = name.trim();
   if (!trimmed) return "export.zip";
@@ -1519,7 +1564,9 @@ export default function Home() {
                                                       ? makeBlankCapTypeEntry()
                                                       : category === "formLayoutEditor"
                                                         ? makeBlankFormLayoutEditorEntry()
-                                                        : null;
+                                                        : category === "inspectionGroup"
+                                                          ? makeBlankInspectionGroupEntry()
+                                                          : null;
       if (!blankEntry) return;
       if (
         zipResult &&
@@ -1624,6 +1671,9 @@ export default function Home() {
   const formLayoutEditorEntries = editableEntries.filter(
     (en): en is FormLayoutEditorZipEntry => en.kind === "formLayoutEditor"
   );
+  const inspectionGroupEntries = editableEntries.filter(
+    (en): en is InspectionGroupZipEntry => en.kind === "inspectionGroup"
+  );
 
   const sensitiveMatches = zipResult
     ? detectSensitiveEntries(zipResult.entries.map((en) => en.path))
@@ -1668,7 +1718,8 @@ export default function Home() {
       validateVirProcessEntries(virProcessEntries) ??
       validateASIGroupEntries(asiGroupEntries) ??
       validateCapTypeEntries(capTypeEntries) ??
-      validateFormLayoutEditorEntries(formLayoutEditorEntries);
+      validateFormLayoutEditorEntries(formLayoutEditorEntries) ??
+      validateInspectionGroupEntries(inspectionGroupEntries);
     if (validationError) {
       setError(validationError);
       return;
@@ -1737,6 +1788,7 @@ export default function Home() {
     asiGroupEntries,
     capTypeEntries,
     formLayoutEditorEntries,
+    inspectionGroupEntries,
   ]);
 
   // Cascading on every keystroke would be wasteful (it touches every
@@ -2213,8 +2265,17 @@ export default function Home() {
               toolbarLabel="Cap Types"
               addButtonLabel="+ Add Cap Type"
             />
-          ) : (
+          ) : activeEntry.kind === "formLayoutEditor" ? (
             <FormLayoutEditorGrid
+              key={activeEntry.path}
+              ref={gridRef}
+              records={activeEntry.records}
+              onChange={handleDataChange}
+              gridThemeClass={gridThemeClass}
+              agencyId={agencyId}
+            />
+          ) : (
+            <InspectionGroupGrid
               key={activeEntry.path}
               ref={gridRef}
               records={activeEntry.records}
