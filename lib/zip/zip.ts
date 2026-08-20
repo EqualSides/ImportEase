@@ -86,6 +86,11 @@ import {
 import { buildExportedVirProcessXml, isVirProcessXml, parseVirProcessXml } from "../xml/virProcess";
 import { buildExportedASIGroupXml, isASIGroupXml, parseASIGroupXml } from "../xml/asiGroup";
 import { buildExportedCapTypeXml, isCapTypeXml, parseCapTypeXml } from "../xml/capType";
+import {
+  buildExportedFormLayoutEditorXml,
+  isFormLayoutEditorXml,
+  parseFormLayoutEditorXml,
+} from "../xml/formLayoutEditor";
 import type { ParseZipResult, ZipEntryData } from "../types";
 
 /**
@@ -139,6 +144,11 @@ const DETECTORS: {
   { kind: "virProcess", sniff: isVirProcessXml, parse: parseVirProcessXml },
   { kind: "asiGroup", sniff: isASIGroupXml, parse: parseASIGroupXml },
   { kind: "capType", sniff: isCapTypeXml, parse: parseCapTypeXml },
+  {
+    kind: "formLayoutEditor",
+    sniff: isFormLayoutEditorXml,
+    parse: parseFormLayoutEditorXml,
+  },
 ];
 
 export async function parseUploadedZip(
@@ -306,6 +316,11 @@ export async function buildExportZip(entries: ZipEntryData[]): Promise<Uint8Arra
       zip.file(
         entry.path,
         buildExportedCapTypeXml({ listAttrs: entry.listAttrs, records: entry.records })
+      );
+    } else if (entry.kind === "formLayoutEditor") {
+      zip.file(
+        entry.path,
+        buildExportedFormLayoutEditorXml({ listAttrs: entry.listAttrs, records: entry.records })
       );
     } else {
       zip.file(entry.path, entry.bytes);

@@ -18,6 +18,7 @@ import StandardCommentGroupGrid from "@/components/StandardCommentGroupGrid";
 import RefFeeScheduleGrid from "@/components/RefFeeScheduleGrid";
 import VirProcessGrid from "@/components/VirProcessGrid";
 import ASIGroupGrid from "@/components/ASIGroupGrid";
+import FormLayoutEditorGrid from "@/components/FormLayoutEditorGrid";
 import FlatGrid, { type FlatGridColumnMeta } from "@/components/FlatGrid";
 import {
   getStandardChoiceValueNodes,
@@ -187,6 +188,12 @@ import {
   setCapTypeField,
   toCapTypeRow,
 } from "@/lib/xml/capType";
+import {
+  getFormLayoutElementNodes,
+  inferCommonAgencyId as inferCommonAgencyIdFormLayoutEditor,
+  toFormLayoutScreenRow,
+  toFormLayoutElementRow,
+} from "@/lib/xml/formLayoutEditor";
 import { detectSensitiveEntries } from "@/lib/sensitiveFiles";
 import { exportZipInWorker, parseZipInWorker } from "@/lib/worker/client";
 import type {
@@ -212,6 +219,7 @@ import type {
   VirProcessZipEntry,
   ASIGroupZipEntry,
   CapTypeZipEntry,
+  FormLayoutEditorZipEntry,
   TimeGroupZipEntry,
   TimeTypesZipEntry,
   ZipEntryData,
@@ -247,7 +255,8 @@ type EditableZipEntry =
   | RefFeeScheduleZipEntry
   | VirProcessZipEntry
   | ASIGroupZipEntry
-  | CapTypeZipEntry;
+  | CapTypeZipEntry
+  | FormLayoutEditorZipEntry;
 
 function isEditableEntry(entry: ZipEntryData): entry is EditableZipEntry {
   return (
@@ -273,7 +282,8 @@ function isEditableEntry(entry: ZipEntryData): entry is EditableZipEntry {
     entry.kind === "refFeeSchedule" ||
     entry.kind === "virProcess" ||
     entry.kind === "asiGroup" ||
-    entry.kind === "capType"
+    entry.kind === "capType" ||
+    entry.kind === "formLayoutEditor"
   );
 }
 
@@ -331,6 +341,8 @@ function inferAgencyIdForEntry(entry: EditableZipEntry): string {
       return inferCommonAgencyIdASIGroup(entry.records.map(toASIGroupRow));
     case "capType":
       return inferCommonAgencyIdCapType(entry.records.map(toCapTypeRow));
+    case "formLayoutEditor":
+      return inferCommonAgencyIdFormLayoutEditor(entry.records.map(toFormLayoutScreenRow));
   }
 }
 
@@ -343,39 +355,39 @@ const THEME_STORAGE_KEY = "importease-theme";
 // update.md) are intentionally excluded, since neither is ever a "start
 // blank and fill in" target.
 const CATEGORY_OPTIONS: { value: string; label: string; available: boolean }[] = [
-  { value: "standardChoice", label: "Standard Choice", available: true },
-  { value: "sharedDropDown", label: "Shared Drop-down List", available: true },
-  { value: "refAddressTypeGroup", label: "Ref Address Type Group", available: true },
-  { value: "organizationAgency", label: "Organization/Agency", available: true },
-  { value: "inspRelateInsp", label: "Insp Relate Insp", available: true },
-  { value: "conditions", label: "Conditions", available: false },
-  { value: "rapoTemplate", label: "RAPO Template", available: true },
-  { value: "timeGroup", label: "Time Group", available: true },
-  { value: "timeTypes", label: "Time Types", available: true },
-  { value: "checklistGroup", label: "Checklist Group", available: true },
-  { value: "referenceMask", label: "Reference Mask", available: true },
-  { value: "refLookupTable", label: "Ref Lookup Table", available: true },
-  { value: "emailMessage", label: "Email Message", available: true },
-  { value: "userProfiles", label: "User Profiles", available: false },
-  { value: "standardCommentGroup", label: "Standard Comment Group", available: true },
-  { value: "departmentType", label: "Department Type", available: false },
-  { value: "user", label: "User", available: false },
-  { value: "refInspectionResultGroup", label: "Ref Inspection Result Group", available: true },
-  { value: "commentGroup", label: "Comment Group", available: true },
-  { value: "sequence", label: "Sequence", available: true },
-  { value: "applicationStatusGroup", label: "Application Status Group", available: true },
-  { value: "refCalendar", label: "Ref Calendar", available: false },
-  { value: "inspectionGroup", label: "Inspection Group", available: false },
-  { value: "refDocument", label: "Ref Document", available: false },
-  { value: "guideSheet", label: "Guide Sheet", available: true },
-  { value: "smartChoiceGroup", label: "Smart Choice Group", available: true },
-  { value: "virProcess", label: "Virtual Process", available: true },
-  { value: "refFeeSchedule", label: "Ref Fee Schedule", available: true },
-  { value: "capType", label: "Cap Type", available: true },
   { value: "acaConfiguration", label: "ACA Configuration", available: false },
   { value: "agencyGroup", label: "Agency Group", available: false },
-  { value: "formLayoutEditor", label: "Form Layout Editor", available: false },
+  { value: "applicationStatusGroup", label: "Application Status Group", available: true },
   { value: "asiGroup", label: "ASI Groups", available: true },
+  { value: "capType", label: "Cap Type", available: true },
+  { value: "checklistGroup", label: "Checklist Group", available: true },
+  { value: "commentGroup", label: "Comment Group", available: true },
+  { value: "conditions", label: "Conditions", available: false },
+  { value: "departmentType", label: "Department Type", available: false },
+  { value: "emailMessage", label: "Email Message", available: true },
+  { value: "formLayoutEditor", label: "Form Layout Editor", available: true },
+  { value: "guideSheet", label: "Guide Sheet", available: true },
+  { value: "inspRelateInsp", label: "Insp Relate Insp", available: true },
+  { value: "inspectionGroup", label: "Inspection Group", available: false },
+  { value: "organizationAgency", label: "Organization/Agency", available: true },
+  { value: "rapoTemplate", label: "RAPO Template", available: true },
+  { value: "refAddressTypeGroup", label: "Ref Address Type Group", available: true },
+  { value: "refCalendar", label: "Ref Calendar", available: false },
+  { value: "refDocument", label: "Ref Document", available: false },
+  { value: "refFeeSchedule", label: "Ref Fee Schedule", available: true },
+  { value: "refInspectionResultGroup", label: "Ref Inspection Result Group", available: true },
+  { value: "refLookupTable", label: "Ref Lookup Table", available: true },
+  { value: "referenceMask", label: "Reference Mask", available: true },
+  { value: "sequence", label: "Sequence", available: true },
+  { value: "sharedDropDown", label: "Shared Drop-down List", available: true },
+  { value: "smartChoiceGroup", label: "Smart Choice Group", available: true },
+  { value: "standardChoice", label: "Standard Choice", available: true },
+  { value: "standardCommentGroup", label: "Standard Comment Group", available: true },
+  { value: "timeGroup", label: "Time Group", available: true },
+  { value: "timeTypes", label: "Time Types", available: true },
+  { value: "user", label: "User", available: false },
+  { value: "userProfiles", label: "User Profiles", available: false },
+  { value: "virProcess", label: "Virtual Process", available: true },
 ];
 
 // Fields the schema doc (docs/schema-standard-choice.md) marks "always" —
@@ -807,6 +819,21 @@ function makeBlankCapTypeEntry(): CapTypeZipEntry {
   };
 }
 
+function makeBlankFormLayoutEditorEntry(): FormLayoutEditorZipEntry {
+  return {
+    path: "FormLayoutEditorModel.xml",
+    kind: "formLayoutEditor",
+    listAttrs: {
+      version: "9.0.0",
+      minorVersion: "26",
+      exportUser: "",
+      exportDateTime: "",
+      description: "null",
+    },
+    records: [],
+  };
+}
+
 function validateReferenceMaskEntries(entries: ReferenceMaskZipEntry[]): string | null {
   for (const entry of entries) {
     for (const record of entry.records) {
@@ -1151,6 +1178,24 @@ function validateCapTypeEntries(entries: CapTypeZipEntry[]): string | null {
   return null;
 }
 
+function validateFormLayoutEditorEntries(entries: FormLayoutEditorZipEntry[]): string | null {
+  for (const entry of entries) {
+    for (const record of entry.records) {
+      const row = toFormLayoutScreenRow(record);
+      if (!row.screenName.trim()) {
+        return `"${entry.path}" has a Screen with no Screen Name set — every screen needs a Screen Name before export.`;
+      }
+      for (const elementNode of getFormLayoutElementNodes(record)) {
+        const elementRow = toFormLayoutElementRow(elementNode);
+        if (!elementRow.screenElementName.trim()) {
+          return `"${entry.path}" — "${row.screenName}" has an element with no Element Name set — every element needs one before export.`;
+        }
+      }
+    }
+  }
+  return null;
+}
+
 function withZipExtension(name: string): string {
   const trimmed = name.trim();
   if (!trimmed) return "export.zip";
@@ -1472,7 +1517,9 @@ export default function Home() {
                                                     ? makeBlankASIGroupEntry()
                                                     : category === "capType"
                                                       ? makeBlankCapTypeEntry()
-                                                      : null;
+                                                      : category === "formLayoutEditor"
+                                                        ? makeBlankFormLayoutEditorEntry()
+                                                        : null;
       if (!blankEntry) return;
       if (
         zipResult &&
@@ -1574,6 +1621,9 @@ export default function Home() {
   const capTypeEntries = editableEntries.filter(
     (en): en is CapTypeZipEntry => en.kind === "capType"
   );
+  const formLayoutEditorEntries = editableEntries.filter(
+    (en): en is FormLayoutEditorZipEntry => en.kind === "formLayoutEditor"
+  );
 
   const sensitiveMatches = zipResult
     ? detectSensitiveEntries(zipResult.entries.map((en) => en.path))
@@ -1617,7 +1667,8 @@ export default function Home() {
       validateRefFeeScheduleEntries(refFeeScheduleEntries) ??
       validateVirProcessEntries(virProcessEntries) ??
       validateASIGroupEntries(asiGroupEntries) ??
-      validateCapTypeEntries(capTypeEntries);
+      validateCapTypeEntries(capTypeEntries) ??
+      validateFormLayoutEditorEntries(formLayoutEditorEntries);
     if (validationError) {
       setError(validationError);
       return;
@@ -1685,6 +1736,7 @@ export default function Home() {
     virProcessEntries,
     asiGroupEntries,
     capTypeEntries,
+    formLayoutEditorEntries,
   ]);
 
   // Cascading on every keystroke would be wasteful (it touches every
@@ -2151,7 +2203,7 @@ export default function Home() {
               gridThemeClass={gridThemeClass}
               agencyId={agencyId}
             />
-          ) : (
+          ) : activeEntry.kind === "capType" ? (
             <FlatGrid
               key={activeEntry.path}
               ref={gridRef}
@@ -2169,6 +2221,15 @@ export default function Home() {
               deleteNode={deleteCapType}
               toolbarLabel="Cap Types"
               addButtonLabel="+ Add Cap Type"
+            />
+          ) : (
+            <FormLayoutEditorGrid
+              key={activeEntry.path}
+              ref={gridRef}
+              records={activeEntry.records}
+              onChange={handleDataChange}
+              gridThemeClass={gridThemeClass}
+              agencyId={agencyId}
             />
           )
         ) : (
