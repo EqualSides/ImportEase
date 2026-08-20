@@ -17,6 +17,7 @@ import SmartChoiceGroupGrid from "@/components/SmartChoiceGroupGrid";
 import StandardCommentGroupGrid from "@/components/StandardCommentGroupGrid";
 import RefFeeScheduleGrid from "@/components/RefFeeScheduleGrid";
 import VirProcessGrid from "@/components/VirProcessGrid";
+import ExpressionBuilderGrid from "@/components/ExpressionBuilderGrid";
 import ASIGroupGrid from "@/components/ASIGroupGrid";
 import FormLayoutEditorGrid from "@/components/FormLayoutEditorGrid";
 import InspectionGroupGrid from "@/components/InspectionGroupGrid";
@@ -44,6 +45,14 @@ import {
   setConditionField,
   toConditionRow,
 } from "@/lib/xml/conditions";
+import {
+  getArmNodes as getExpressionBuilderArmNodes,
+  inferCommonAgencyId as inferCommonAgencyIdExpressionBuilder,
+  toExpressCalculationRow,
+  toExpressCriteriaRow,
+  toExpressFieldRow,
+  toExpressionRow,
+} from "@/lib/xml/expressionBuilder";
 import {
   getStandardChoiceValueNodes,
   inferCommonAgencyId as inferCommonAgencyIdStandardChoice,
@@ -260,6 +269,7 @@ import type {
   RefDocumentZipEntry,
   DepartmentTypeZipEntry,
   ConditionsZipEntry,
+  ExpressionBuilderZipEntry,
   TimeGroupZipEntry,
   TimeTypesZipEntry,
   ZipEntryData,
@@ -300,7 +310,8 @@ type EditableZipEntry =
   | InspectionGroupZipEntry
   | RefDocumentZipEntry
   | DepartmentTypeZipEntry
-  | ConditionsZipEntry;
+  | ConditionsZipEntry
+  | ExpressionBuilderZipEntry;
 
 function isEditableEntry(entry: ZipEntryData): entry is EditableZipEntry {
   return (
@@ -331,7 +342,8 @@ function isEditableEntry(entry: ZipEntryData): entry is EditableZipEntry {
     entry.kind === "inspectionGroup" ||
     entry.kind === "refDocument" ||
     entry.kind === "departmentType" ||
-    entry.kind === "conditions"
+    entry.kind === "conditions" ||
+    entry.kind === "expressionBuilder"
   );
 }
 
@@ -399,6 +411,8 @@ function inferAgencyIdForEntry(entry: EditableZipEntry): string {
       return inferCommonAgencyIdDepartmentType(entry.records.map(toDepartmentTypeRow));
     case "conditions":
       return inferCommonAgencyIdConditions(entry.records.map(toConditionRow));
+    case "expressionBuilder":
+      return inferCommonAgencyIdExpressionBuilder(entry.records.map(toExpressionRow));
   }
 }
 
@@ -425,6 +439,7 @@ const CATEGORY_OPTIONS: { value: string; label: string }[] = [
   { value: "conditions", label: "Conditions" },
   { value: "departmentType", label: "Department Type" },
   { value: "emailMessage", label: "Email Message" },
+  { value: "expressionBuilder", label: "Expression Builder" },
   { value: "formLayoutEditor", label: "Form Layout Editor" },
   { value: "guideSheet", label: "Guide Sheet" },
   { value: "inspRelateInsp", label: "Insp Relate Insp" },
@@ -951,6 +966,21 @@ function makeBlankConditionsEntry(): ConditionsZipEntry {
   };
 }
 
+function makeBlankExpressionBuilderEntry(): ExpressionBuilderZipEntry {
+  return {
+    path: "RefExpressionModel.xml",
+    kind: "expressionBuilder",
+    listAttrs: {
+      version: "9.0.0",
+      minorVersion: "26",
+      exportUser: "",
+      exportDateTime: "",
+      description: "null",
+    },
+    records: [],
+  };
+}
+
 function validateReferenceMaskEntries(entries: ReferenceMaskZipEntry[]): string | null {
   for (const entry of entries) {
     for (const record of entry.records) {
@@ -1373,6 +1403,36 @@ function validateConditionsEntries(entries: ConditionsZipEntry[]): string | null
   return null;
 }
 
+function validateExpressionBuilderEntries(entries: ExpressionBuilderZipEntry[]): string | null {
+  for (const entry of entries) {
+    for (const record of entry.records) {
+      const row = toExpressionRow(record);
+      if (!row.expressionName.trim()) {
+        return `"${entry.path}" has an Expression with no Expression Name set — every expression needs one before export.`;
+      }
+      for (const calcNode of getExpressionBuilderArmNodes(record, "calc")) {
+        const calcRow = toExpressCalculationRow(calcNode);
+        if (!calcRow.fieldName.trim()) {
+          return `"${entry.path}" — "${row.expressionName}" has a calculation with no Field Name set — every calculation needs one before export.`;
+        }
+      }
+      for (const criteriaNode of getExpressionBuilderArmNodes(record, "criteria")) {
+        const criteriaRow = toExpressCriteriaRow(criteriaNode);
+        if (!criteriaRow.fieldName.trim()) {
+          return `"${entry.path}" — "${row.expressionName}" has a criteria entry with no Field Name set — every criteria entry needs one before export.`;
+        }
+      }
+      for (const fieldNode of getExpressionBuilderArmNodes(record, "field")) {
+        const fieldRow = toExpressFieldRow(fieldNode);
+        if (!fieldRow.name.trim()) {
+          return `"${entry.path}" — "${row.expressionName}" has a field with no Name set — every field needs one before export.`;
+        }
+      }
+    }
+  }
+  return null;
+}
+
 function withZipExtension(name: string): string {
   const trimmed = name.trim();
   if (!trimmed) return "export.zip";
@@ -1786,7 +1846,9 @@ export default function Home() {
                                                               ? makeBlankDepartmentTypeEntry()
                                                               : category === "conditions"
                                                                 ? makeBlankConditionsEntry()
-                                                                : null;
+                                                                : category === "expressionBuilder"
+                                                                  ? makeBlankExpressionBuilderEntry()
+                                                                  : null;
       if (!blankEntry) return;
       if (
         zipResult &&
@@ -1903,6 +1965,9 @@ export default function Home() {
   const conditionsEntries = editableEntries.filter(
     (en): en is ConditionsZipEntry => en.kind === "conditions"
   );
+  const expressionBuilderEntries = editableEntries.filter(
+    (en): en is ExpressionBuilderZipEntry => en.kind === "expressionBuilder"
+  );
 
   const sensitiveMatches = zipResult
     ? detectSensitiveEntries(zipResult.entries.map((en) => en.path))
@@ -1951,7 +2016,8 @@ export default function Home() {
       validateInspectionGroupEntries(inspectionGroupEntries) ??
       validateRefDocumentEntries(refDocumentEntries) ??
       validateDepartmentTypeEntries(departmentTypeEntries) ??
-      validateConditionsEntries(conditionsEntries);
+      validateConditionsEntries(conditionsEntries) ??
+      validateExpressionBuilderEntries(expressionBuilderEntries);
     if (validationError) {
       setError(validationError);
       return;
@@ -2024,6 +2090,7 @@ export default function Home() {
     refDocumentEntries,
     departmentTypeEntries,
     conditionsEntries,
+    expressionBuilderEntries,
   ]);
 
   // Cascading on every keystroke would be wasteful (it touches every
@@ -2508,6 +2575,15 @@ export default function Home() {
             />
           ) : activeEntry.kind === "virProcess" ? (
             <VirProcessGrid
+              key={activeEntry.path}
+              ref={gridRef}
+              records={activeEntry.records}
+              onChange={handleDataChange}
+              gridThemeClass={gridThemeClass}
+              agencyId={agencyId}
+            />
+          ) : activeEntry.kind === "expressionBuilder" ? (
+            <ExpressionBuilderGrid
               key={activeEntry.path}
               ref={gridRef}
               records={activeEntry.records}
