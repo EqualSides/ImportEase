@@ -1,0 +1,3 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<list  version="9.0.0" minorVersion="26" exportUser="DSAMPSON" exportDateTime="08/19/2026 09:22 AM" description="null"><r1TimeTypes><servProvCode>CLARKCO</servProvCode><timeTypeSeq>12</timeTypeSeq><billableFlag>Y</billableFlag><defaultPctAdj>0</defaultPctAdj><defaultRate>80</defaultRate><r1PerCategory>ALL</r1PerCategory><r1PerGroup>Building</r1PerGroup><r1PerSubType>ALL</r1PerSubType><r1PerType>ALL</r1PerType><recDate>2015-07-24T11:05:15.927-05:00</recDate><recFulNam>LCHARRON</recFulNam><recStatus>A</recStatus><recordType>CAP</recordType><timeProfileTypeModels/><timeTypeName>Travel</timeTypeName><timeTypeSecurityModels/><timeTypeI18Ns/></r1TimeTypes>
+</list>

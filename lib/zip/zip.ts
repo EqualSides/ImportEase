@@ -50,6 +50,13 @@ import {
   isCommentGroupXml,
   parseCommentGroupXml,
 } from "../xml/commentGroup";
+import { buildExportedTimeTypesXml, isTimeTypesXml, parseTimeTypesXml } from "../xml/timeTypes";
+import { buildExportedTimeGroupXml, isTimeGroupXml, parseTimeGroupXml } from "../xml/timeGroup";
+import {
+  buildExportedRefInspectionResultGroupXml,
+  isRefInspectionResultGroupXml,
+  parseRefInspectionResultGroupXml,
+} from "../xml/refInspectionResultGroup";
 import type { ParseZipResult, ZipEntryData } from "../types";
 
 /**
@@ -83,6 +90,13 @@ const DETECTORS: {
     parse: parseApplicationStatusGroupXml,
   },
   { kind: "commentGroup", sniff: isCommentGroupXml, parse: parseCommentGroupXml },
+  { kind: "timeTypes", sniff: isTimeTypesXml, parse: parseTimeTypesXml },
+  { kind: "timeGroup", sniff: isTimeGroupXml, parse: parseTimeGroupXml },
+  {
+    kind: "refInspectionResultGroup",
+    sniff: isRefInspectionResultGroupXml,
+    parse: parseRefInspectionResultGroupXml,
+  },
 ];
 
 export async function parseUploadedZip(
@@ -187,6 +201,24 @@ export async function buildExportZip(entries: ZipEntryData[]): Promise<Uint8Arra
       zip.file(
         entry.path,
         buildExportedCommentGroupXml({ listAttrs: entry.listAttrs, records: entry.records })
+      );
+    } else if (entry.kind === "timeTypes") {
+      zip.file(
+        entry.path,
+        buildExportedTimeTypesXml({ listAttrs: entry.listAttrs, records: entry.records })
+      );
+    } else if (entry.kind === "timeGroup") {
+      zip.file(
+        entry.path,
+        buildExportedTimeGroupXml({ listAttrs: entry.listAttrs, records: entry.records })
+      );
+    } else if (entry.kind === "refInspectionResultGroup") {
+      zip.file(
+        entry.path,
+        buildExportedRefInspectionResultGroupXml({
+          listAttrs: entry.listAttrs,
+          records: entry.records,
+        })
       );
     } else {
       zip.file(entry.path, entry.bytes);

@@ -8,6 +8,8 @@ import SequenceGrid from "@/components/SequenceGrid";
 import CheckListGroupGrid from "@/components/CheckListGroupGrid";
 import ApplicationStatusGroupGrid from "@/components/ApplicationStatusGroupGrid";
 import CommentGroupGrid from "@/components/CommentGroupGrid";
+import TimeGroupGrid from "@/components/TimeGroupGrid";
+import RefInspectionResultGroupGrid from "@/components/RefInspectionResultGroupGrid";
 import FlatGrid, { type FlatGridColumnMeta } from "@/components/FlatGrid";
 import {
   getStandardChoiceValueNodes,
@@ -87,6 +89,27 @@ import {
   toCommentGroupRow,
   toStandardCommentModelRow,
 } from "@/lib/xml/commentGroup";
+import {
+  getXTimeGroupTypeNodes,
+  inferCommonAgencyId as inferCommonAgencyIdTimeGroup,
+  toTimeGroupRow,
+  toXTimeGroupTypeRow,
+} from "@/lib/xml/timeGroup";
+import {
+  createTimeTypesNode,
+  deleteTimeTypes,
+  findTimeTypesByUid,
+  inferCommonAgencyId as inferCommonAgencyIdTimeTypes,
+  nextRefIdNumber as nextRefIdNumberTimeTypes,
+  setTimeTypesField,
+  toTimeTypesRow,
+} from "@/lib/xml/timeTypes";
+import {
+  getInspectionResultGroupModelNodes,
+  inferCommonAgencyId as inferCommonAgencyIdRefInspectionResultGroup,
+  toInspectionResultGroupModelRow,
+  toRefInspectionResultGroupRow,
+} from "@/lib/xml/refInspectionResultGroup";
 import { detectSensitiveEntries } from "@/lib/sensitiveFiles";
 import { exportZipInWorker, parseZipInWorker } from "@/lib/worker/client";
 import type {
@@ -98,10 +121,13 @@ import type {
   OrganizationAgencyZipEntry,
   ParseZipResult,
   RefAddressTypeGroupZipEntry,
+  RefInspectionResultGroupZipEntry,
   ReferenceMaskZipEntry,
   SequenceZipEntry,
   SharedDropDownZipEntry,
   StandardChoiceZipEntry,
+  TimeGroupZipEntry,
+  TimeTypesZipEntry,
   ZipEntryData,
 } from "@/lib/types";
 
@@ -123,7 +149,10 @@ type EditableZipEntry =
   | SequenceZipEntry
   | CheckListGroupZipEntry
   | ApplicationStatusGroupZipEntry
-  | CommentGroupZipEntry;
+  | CommentGroupZipEntry
+  | TimeGroupZipEntry
+  | TimeTypesZipEntry
+  | RefInspectionResultGroupZipEntry;
 
 function isEditableEntry(entry: ZipEntryData): entry is EditableZipEntry {
   return (
@@ -137,7 +166,10 @@ function isEditableEntry(entry: ZipEntryData): entry is EditableZipEntry {
     entry.kind === "sequence" ||
     entry.kind === "checklistGroup" ||
     entry.kind === "applicationStatusGroup" ||
-    entry.kind === "commentGroup"
+    entry.kind === "commentGroup" ||
+    entry.kind === "timeGroup" ||
+    entry.kind === "timeTypes" ||
+    entry.kind === "refInspectionResultGroup"
   );
 }
 
@@ -169,6 +201,14 @@ function inferAgencyIdForEntry(entry: EditableZipEntry): string {
       );
     case "commentGroup":
       return inferCommonAgencyIdCommentGroup(entry.records.map(toCommentGroupRow));
+    case "timeGroup":
+      return inferCommonAgencyIdTimeGroup(entry.records.map(toTimeGroupRow));
+    case "timeTypes":
+      return inferCommonAgencyIdTimeTypes(entry.records.map(toTimeTypesRow));
+    case "refInspectionResultGroup":
+      return inferCommonAgencyIdRefInspectionResultGroup(
+        entry.records.map(toRefInspectionResultGroupRow)
+      );
   }
 }
 
@@ -188,8 +228,8 @@ const CATEGORY_OPTIONS: { value: string; label: string; available: boolean }[] =
   { value: "inspRelateInsp", label: "Insp Relate Insp", available: true },
   { value: "conditions", label: "Conditions", available: false },
   { value: "rapoTemplate", label: "RAPO Template", available: false },
-  { value: "timeGroup", label: "Time Group", available: false },
-  { value: "timeTypes", label: "Time Types", available: false },
+  { value: "timeGroup", label: "Time Group", available: true },
+  { value: "timeTypes", label: "Time Types", available: true },
   { value: "checklistGroup", label: "Checklist Group", available: true },
   { value: "referenceMask", label: "Reference Mask", available: true },
   { value: "refLookupTable", label: "Ref Lookup Table", available: false },
@@ -198,7 +238,7 @@ const CATEGORY_OPTIONS: { value: string; label: string; available: boolean }[] =
   { value: "standardCommentGroup", label: "Standard Comment Group", available: false },
   { value: "departmentType", label: "Department Type", available: false },
   { value: "user", label: "User", available: false },
-  { value: "refInspectionResultGroup", label: "Ref Inspection Result Group", available: false },
+  { value: "refInspectionResultGroup", label: "Ref Inspection Result Group", available: true },
   { value: "commentGroup", label: "Comment Group", available: true },
   { value: "sequence", label: "Sequence", available: true },
   { value: "applicationStatusGroup", label: "Application Status Group", available: true },
@@ -465,6 +505,51 @@ function makeBlankCommentGroupEntry(): CommentGroupZipEntry {
   };
 }
 
+function makeBlankTimeGroupEntry(): TimeGroupZipEntry {
+  return {
+    path: "TimeGroupModel.xml",
+    kind: "timeGroup",
+    listAttrs: {
+      version: "9.0.0",
+      minorVersion: "26",
+      exportUser: "",
+      exportDateTime: "",
+      description: "null",
+    },
+    records: [],
+  };
+}
+
+function makeBlankTimeTypesEntry(): TimeTypesZipEntry {
+  return {
+    path: "TimeTypesModel.xml",
+    kind: "timeTypes",
+    listAttrs: {
+      version: "9.0.0",
+      minorVersion: "26",
+      exportUser: "",
+      exportDateTime: "",
+      description: "null",
+    },
+    records: [],
+  };
+}
+
+function makeBlankRefInspectionResultGroupEntry(): RefInspectionResultGroupZipEntry {
+  return {
+    path: "RefInspectionResultGroupModel.xml",
+    kind: "refInspectionResultGroup",
+    listAttrs: {
+      version: "9.0.0",
+      minorVersion: "26",
+      exportUser: "",
+      exportDateTime: "",
+      description: "null",
+    },
+    records: [],
+  };
+}
+
 function validateReferenceMaskEntries(entries: ReferenceMaskZipEntry[]): string | null {
   for (const entry of entries) {
     for (const record of entry.records) {
@@ -563,6 +648,50 @@ function validateCommentGroupEntries(entries: CommentGroupZipEntry[]): string | 
   return null;
 }
 
+function validateTimeGroupEntries(entries: TimeGroupZipEntry[]): string | null {
+  for (const entry of entries) {
+    for (const record of entry.records) {
+      const row = toTimeGroupRow(record);
+      if (!row.timeGroupName.trim()) {
+        return `"${entry.path}" has a Time Group with no Time Group Name set — every group needs a name before export.`;
+      }
+    }
+  }
+  return null;
+}
+
+function validateTimeTypesEntries(entries: TimeTypesZipEntry[]): string | null {
+  for (const entry of entries) {
+    for (const record of entry.records) {
+      const row = toTimeTypesRow(record);
+      if (!row.timeTypeName.trim()) {
+        return `"${entry.path}" has a Time Type with no Time Type Name set — every time type needs a name before export.`;
+      }
+    }
+  }
+  return null;
+}
+
+function validateRefInspectionResultGroupEntries(
+  entries: RefInspectionResultGroupZipEntry[]
+): string | null {
+  for (const entry of entries) {
+    for (const record of entry.records) {
+      const row = toRefInspectionResultGroupRow(record);
+      if (!row.inspResultGroup.trim()) {
+        return `"${entry.path}" has an Inspection Result Group with no Result Group set — every group needs a Result Group before export.`;
+      }
+      for (const resultNode of getInspectionResultGroupModelNodes(record)) {
+        const resultRow = toInspectionResultGroupModelRow(resultNode);
+        if (!resultRow.inspResult.trim()) {
+          return `"${entry.path}" — "${row.inspResultGroup}" has a result with no Result set — every result needs one before export.`;
+        }
+      }
+    }
+  }
+  return null;
+}
+
 function withZipExtension(name: string): string {
   const trimmed = name.trim();
   if (!trimmed) return "export.zip";
@@ -645,6 +774,21 @@ const EMAIL_MESSAGE_COLUMNS: FlatGridColumnMeta[] = [
   { field: "contentsType", headerName: "Type", editable: true },
   { field: "contentsBody", headerName: "Body", editable: true },
   { field: "serviceProviderCode", headerName: "Agency ID", editable: true, hide: true },
+];
+
+const TIME_TYPES_COLUMNS: FlatGridColumnMeta[] = [
+  { field: "refId", headerName: "Ref ID", editable: false, hide: true },
+  { field: "timeTypeName", headerName: "Time Type Name", editable: true },
+  { field: "recordType", headerName: "Record Type", editable: true },
+  { field: "billableFlag", headerName: "Billable", editable: true },
+  { field: "defaultRate", headerName: "Default Rate", editable: true },
+  { field: "defaultPctAdj", headerName: "Default % Adj", editable: true, hide: true },
+  { field: "r1PerCategory", headerName: "Category", editable: true, hide: true },
+  { field: "r1PerGroup", headerName: "Group", editable: true, hide: true },
+  { field: "r1PerSubType", headerName: "Sub Type", editable: true, hide: true },
+  { field: "r1PerType", headerName: "Type", editable: true, hide: true },
+  { field: "timeTypeSeq", headerName: "Time Type Seq #", editable: true, hide: true },
+  { field: "servProvCode", headerName: "Agency ID", editable: true, hide: true },
 ];
 
 export default function Home() {
@@ -812,7 +956,13 @@ export default function Home() {
                             ? makeBlankApplicationStatusGroupEntry()
                             : category === "commentGroup"
                               ? makeBlankCommentGroupEntry()
-                              : null;
+                              : category === "timeGroup"
+                                ? makeBlankTimeGroupEntry()
+                                : category === "timeTypes"
+                                  ? makeBlankTimeTypesEntry()
+                                  : category === "refInspectionResultGroup"
+                                    ? makeBlankRefInspectionResultGroupEntry()
+                                    : null;
       if (!blankEntry) return;
       if (
         zipResult &&
@@ -878,6 +1028,15 @@ export default function Home() {
   const commentGroupEntries = editableEntries.filter(
     (en): en is CommentGroupZipEntry => en.kind === "commentGroup"
   );
+  const timeGroupEntries = editableEntries.filter(
+    (en): en is TimeGroupZipEntry => en.kind === "timeGroup"
+  );
+  const timeTypesEntries = editableEntries.filter(
+    (en): en is TimeTypesZipEntry => en.kind === "timeTypes"
+  );
+  const refInspectionResultGroupEntries = editableEntries.filter(
+    (en): en is RefInspectionResultGroupZipEntry => en.kind === "refInspectionResultGroup"
+  );
 
   const sensitiveMatches = zipResult
     ? detectSensitiveEntries(zipResult.entries.map((en) => en.path))
@@ -909,7 +1068,10 @@ export default function Home() {
       validateSequenceEntries(sequenceEntries) ??
       validateCheckListGroupEntries(checklistGroupEntries) ??
       validateApplicationStatusGroupEntries(applicationStatusGroupEntries) ??
-      validateCommentGroupEntries(commentGroupEntries);
+      validateCommentGroupEntries(commentGroupEntries) ??
+      validateTimeGroupEntries(timeGroupEntries) ??
+      validateTimeTypesEntries(timeTypesEntries) ??
+      validateRefInspectionResultGroupEntries(refInspectionResultGroupEntries);
     if (validationError) {
       setError(validationError);
       return;
@@ -965,6 +1127,9 @@ export default function Home() {
     checklistGroupEntries,
     applicationStatusGroupEntries,
     commentGroupEntries,
+    timeGroupEntries,
+    timeTypesEntries,
+    refInspectionResultGroupEntries,
   ]);
 
   // Cascading on every keystroke would be wasteful (it touches every
@@ -1313,8 +1478,45 @@ export default function Home() {
               gridThemeClass={gridThemeClass}
               agencyId={agencyId}
             />
-          ) : (
+          ) : activeEntry.kind === "commentGroup" ? (
             <CommentGroupGrid
+              key={activeEntry.path}
+              ref={gridRef}
+              records={activeEntry.records}
+              onChange={handleDataChange}
+              gridThemeClass={gridThemeClass}
+              agencyId={agencyId}
+            />
+          ) : activeEntry.kind === "timeGroup" ? (
+            <TimeGroupGrid
+              key={activeEntry.path}
+              ref={gridRef}
+              records={activeEntry.records}
+              onChange={handleDataChange}
+              gridThemeClass={gridThemeClass}
+              agencyId={agencyId}
+            />
+          ) : activeEntry.kind === "timeTypes" ? (
+            <FlatGrid
+              key={activeEntry.path}
+              ref={gridRef}
+              records={activeEntry.records}
+              onChange={handleDataChange}
+              gridThemeClass={gridThemeClass}
+              agencyId={agencyId}
+              columnMeta={TIME_TYPES_COLUMNS}
+              toRow={toTimeTypesRow}
+              setField={setTimeTypesField}
+              agencyIdField="servProvCode"
+              createNode={createTimeTypesNode}
+              nextRefIdNumber={nextRefIdNumberTimeTypes}
+              findByUid={findTimeTypesByUid}
+              deleteNode={deleteTimeTypes}
+              toolbarLabel="Time Types"
+              addButtonLabel="+ Add Time Type"
+            />
+          ) : (
+            <RefInspectionResultGroupGrid
               key={activeEntry.path}
               ref={gridRef}
               records={activeEntry.records}

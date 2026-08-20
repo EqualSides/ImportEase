@@ -77,6 +77,27 @@ export interface CommentGroupZipEntry {
   records: PNode[];
 }
 
+export interface TimeTypesZipEntry {
+  path: string;
+  kind: "timeTypes";
+  listAttrs: ListAttrs;
+  records: PNode[];
+}
+
+export interface TimeGroupZipEntry {
+  path: string;
+  kind: "timeGroup";
+  listAttrs: ListAttrs;
+  records: PNode[];
+}
+
+export interface RefInspectionResultGroupZipEntry {
+  path: string;
+  kind: "refInspectionResultGroup";
+  listAttrs: ListAttrs;
+  records: PNode[];
+}
+
 export interface PassthroughZipEntry {
   path: string;
   kind: "passthrough";
@@ -99,6 +120,9 @@ export type ZipEntryData =
   | CheckListGroupZipEntry
   | ApplicationStatusGroupZipEntry
   | CommentGroupZipEntry
+  | TimeTypesZipEntry
+  | TimeGroupZipEntry
+  | RefInspectionResultGroupZipEntry
   | PassthroughZipEntry;
 
 export interface ParseZipResult {
