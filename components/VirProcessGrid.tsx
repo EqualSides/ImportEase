@@ -141,6 +141,12 @@ const ARM_LABEL: Record<ArmKey, string> = {
   status: "Status",
 };
 
+const ARM_LABEL_PLURAL: Record<ArmKey, string> = {
+  task: "Tasks",
+  email: "Email Settings",
+  status: "Statuses",
+};
+
 const ARM_PRIMARY_FIELD: Record<ArmKey, string> = {
   task: "sdProDes",
   email: "contentsCode",
@@ -533,7 +539,7 @@ const VirProcessGrid = forwardRef<VirProcessGridHandle, Props>(function VirProce
           </button>
           <span className="grid-toolbar-label">
             {selectedProcessNode
-              ? `${ARM_LABEL[selectedArm]}s for "${toVirProcessRow(selectedProcessNode).r1ProcessCode || "(unnamed)"}" (${armRows.length})`
+              ? `${ARM_LABEL_PLURAL[selectedArm]} for "${toVirProcessRow(selectedProcessNode).r1ProcessCode || "(unnamed)"}" (${armRows.length})`
               : "Select a Process above to see its entries"}
           </span>
         </div>
