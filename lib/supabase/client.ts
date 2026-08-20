@@ -62,16 +62,19 @@ export async function checkSubscriptionStatus(userId: string): Promise<Subscript
 
 // The admin Edge Functions (admin-create-account, admin-list-accounts)
 // reject an expired access token with 403 "Forbidden". A stale *access*
-// token is recoverable (refresh and retry), but the daniel/admin login
-// is a shared credential that gets signed in from multiple browsers/tabs
-// at once — and Supabase's refresh-token rotation means the *refresh*
-// token itself can go stale too: as soon as one tab uses it, every other
-// tab still holding the old value gets a permanent 400 "Refresh Token
-// Not Found" on its next refresh, no matter how many times it retries.
-// That case isn't self-healable — the local session is just dead — so
-// after one retry attempt we sign out locally (clearing the dead
-// session so the UI falls back to the sign-in screen) rather than
-// looping forever on an error that will never clear itself.
+// token is recoverable (refresh and retry). If the retry still fails,
+// the local refresh token itself is dead (auth logs showed 400 "Refresh
+// Token Not Found") — root-caused to every signOut() call in this app
+// defaulting to Supabase's global scope, which revokes *every* session
+// for the account, not just the current tab. On a shared credential
+// signed in from multiple browsers at once (see the scope: "local" on
+// every signOut() call below and in AuthModal.tsx/page.tsx), that meant
+// one person logging out — or even one blocked sign-in attempt — killed
+// everyone else's session too. Now that every signOut() is scoped
+// locally, this retry-then-recover path should mostly see genuine
+// access-token staleness; it still degrades gracefully (sign out
+// locally, ask the user to sign back in) for whatever isn't caught by
+// that fix.
 export async function invokeAdminFunction<T = any>(
   name: string,
   body: Record<string, unknown>
@@ -82,14 +85,14 @@ export async function invokeAdminFunction<T = any>(
 
   const { error: refreshError } = await supabase.auth.refreshSession();
   if (refreshError) {
-    await supabase.auth.signOut();
+    await supabase.auth.signOut({ scope: "local" });
     return { data: null, error: { message: "Your session has expired. Please sign in again." } };
   }
 
   const second = await supabase.functions.invoke<T>(name, { body });
   const secondFailed = !!second.error || (second.data as any)?.error === "Forbidden";
   if (secondFailed) {
-    await supabase.auth.signOut();
+    await supabase.auth.signOut({ scope: "local" });
     return { data: null, error: { message: "Your session has expired. Please sign in again." } };
   }
   return second;

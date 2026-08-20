@@ -67,13 +67,17 @@ function SignInForm({ onSignedIn }: { onSignedIn: () => void }) {
     if (signInData.user?.email !== ADMIN_EMAIL) {
       const status = await checkSubscriptionStatus(signInData.user!.id);
       if (status === "expired") {
-        await supabase.auth.signOut();
+        // scope: "local" — this account is shared across many concurrent
+        // logins (see lib/supabase/client.ts), so signing out must only
+        // drop *this* browser's just-rejected session, never every other
+        // signed-in user sharing the same credentials.
+        await supabase.auth.signOut({ scope: "local" });
         setSubmitting(false);
         setError("Your subscription has expired. Please contact us to renew.");
         return;
       }
       if (status === "pending") {
-        await supabase.auth.signOut();
+        await supabase.auth.signOut({ scope: "local" });
         setSubmitting(false);
         setError("Your account is pending approval. We'll notify you once access is granted.");
         return;

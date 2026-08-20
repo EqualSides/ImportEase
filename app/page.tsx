@@ -2258,7 +2258,11 @@ export default function Home() {
           </button>
         )}
         {session ? (
-          <button className="btn" style={{ flexShrink: 0 }} onClick={() => supabase.auth.signOut()}>
+          <button
+            className="btn"
+            style={{ flexShrink: 0 }}
+            onClick={() => supabase.auth.signOut({ scope: "local" })}
+          >
             Logout
           </button>
         ) : (
