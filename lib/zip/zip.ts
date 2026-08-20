@@ -62,6 +62,7 @@ import {
   isRefLookupTableXml,
   parseRefLookupTableXml,
 } from "../xml/refLookupTable";
+import { buildExportedGuideSheetXml, isGuideSheetXml, parseGuideSheetXml } from "../xml/guideSheet";
 import type { ParseZipResult, ZipEntryData } from "../types";
 
 /**
@@ -103,6 +104,7 @@ const DETECTORS: {
     parse: parseRefInspectionResultGroupXml,
   },
   { kind: "refLookupTable", sniff: isRefLookupTableXml, parse: parseRefLookupTableXml },
+  { kind: "guideSheet", sniff: isGuideSheetXml, parse: parseGuideSheetXml },
 ];
 
 export async function parseUploadedZip(
@@ -230,6 +232,11 @@ export async function buildExportZip(entries: ZipEntryData[]): Promise<Uint8Arra
       zip.file(
         entry.path,
         buildExportedRefLookupTableXml({ listAttrs: entry.listAttrs, records: entry.records })
+      );
+    } else if (entry.kind === "guideSheet") {
+      zip.file(
+        entry.path,
+        buildExportedGuideSheetXml({ listAttrs: entry.listAttrs, records: entry.records })
       );
     } else {
       zip.file(entry.path, entry.bytes);

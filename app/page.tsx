@@ -11,6 +11,7 @@ import CommentGroupGrid from "@/components/CommentGroupGrid";
 import TimeGroupGrid from "@/components/TimeGroupGrid";
 import RefInspectionResultGroupGrid from "@/components/RefInspectionResultGroupGrid";
 import RefLookupTableGrid from "@/components/RefLookupTableGrid";
+import GuideSheetGrid from "@/components/GuideSheetGrid";
 import FlatGrid, { type FlatGridColumnMeta } from "@/components/FlatGrid";
 import {
   getStandardChoiceValueNodes,
@@ -119,6 +120,14 @@ import {
   toLookupTableValueRow,
   toRefLookupTableRow,
 } from "@/lib/xml/refLookupTable";
+import {
+  getGuideSheetItemNodes,
+  getGuideSheetItemStatusGroupNodes,
+  inferCommonAgencyId as inferCommonAgencyIdGuideSheet,
+  toGuideSheetItemRow,
+  toGuideSheetItemStatusGroupRow,
+  toGuideSheetRow,
+} from "@/lib/xml/guideSheet";
 import { detectSensitiveEntries } from "@/lib/sensitiveFiles";
 import { exportZipInWorker, parseZipInWorker } from "@/lib/worker/client";
 import type {
@@ -126,6 +135,7 @@ import type {
   CheckListGroupZipEntry,
   CommentGroupZipEntry,
   EmailMessageZipEntry,
+  GuideSheetZipEntry,
   InspRelateInspZipEntry,
   OrganizationAgencyZipEntry,
   ParseZipResult,
@@ -163,7 +173,8 @@ type EditableZipEntry =
   | TimeGroupZipEntry
   | TimeTypesZipEntry
   | RefInspectionResultGroupZipEntry
-  | RefLookupTableZipEntry;
+  | RefLookupTableZipEntry
+  | GuideSheetZipEntry;
 
 function isEditableEntry(entry: ZipEntryData): entry is EditableZipEntry {
   return (
@@ -181,7 +192,8 @@ function isEditableEntry(entry: ZipEntryData): entry is EditableZipEntry {
     entry.kind === "timeGroup" ||
     entry.kind === "timeTypes" ||
     entry.kind === "refInspectionResultGroup" ||
-    entry.kind === "refLookupTable"
+    entry.kind === "refLookupTable" ||
+    entry.kind === "guideSheet"
   );
 }
 
@@ -223,6 +235,8 @@ function inferAgencyIdForEntry(entry: EditableZipEntry): string {
       );
     case "refLookupTable":
       return inferCommonAgencyIdRefLookupTable(entry.records.map(toRefLookupTableRow));
+    case "guideSheet":
+      return inferCommonAgencyIdGuideSheet(entry.records.map(toGuideSheetRow));
   }
 }
 
@@ -259,7 +273,7 @@ const CATEGORY_OPTIONS: { value: string; label: string; available: boolean }[] =
   { value: "refCalendar", label: "Ref Calendar", available: false },
   { value: "inspectionGroup", label: "Inspection Group", available: false },
   { value: "refDocument", label: "Ref Document", available: false },
-  { value: "guideSheet", label: "Guide Sheet", available: false },
+  { value: "guideSheet", label: "Guide Sheet", available: true },
   { value: "smartChoiceGroup", label: "Smart Choice Group", available: false },
   { value: "virtualProcess", label: "Virtual Process", available: false },
   { value: "refFeeSchedule", label: "Ref Fee Schedule", available: false },
@@ -579,6 +593,21 @@ function makeBlankRefLookupTableEntry(): RefLookupTableZipEntry {
   };
 }
 
+function makeBlankGuideSheetEntry(): GuideSheetZipEntry {
+  return {
+    path: "GuideSheetModel.xml",
+    kind: "guideSheet",
+    listAttrs: {
+      version: "9.0.0",
+      minorVersion: "26",
+      exportUser: "",
+      exportDateTime: "",
+      description: "null",
+    },
+    records: [],
+  };
+}
+
 function validateReferenceMaskEntries(entries: ReferenceMaskZipEntry[]): string | null {
   for (const entry of entries) {
     for (const record of entry.records) {
@@ -737,6 +766,30 @@ function validateRefLookupTableEntries(entries: RefLookupTableZipEntry[]): strin
           const valRow = toLookupTableValueRow(valNode);
           if (!valRow.lookupColumnValue.trim()) {
             return `"${entry.path}" — "${row.lookupTableName}" / "${colRow.lookupColumnName}" has a value with no Value set — every value needs one before export.`;
+          }
+        }
+      }
+    }
+  }
+  return null;
+}
+
+function validateGuideSheetEntries(entries: GuideSheetZipEntry[]): string | null {
+  for (const entry of entries) {
+    for (const record of entry.records) {
+      const row = toGuideSheetRow(record);
+      if (!row.guideType.trim()) {
+        return `"${entry.path}" has a Guide Sheet with no Guide Type set — every sheet needs a Guide Type before export.`;
+      }
+      for (const itemNode of getGuideSheetItemNodes(record)) {
+        const itemRow = toGuideSheetItemRow(itemNode);
+        if (!itemRow.guideItemText.trim()) {
+          return `"${entry.path}" — "${row.guideType}" has an item with no Item Text set — every item needs one before export.`;
+        }
+        for (const sgNode of getGuideSheetItemStatusGroupNodes(itemNode)) {
+          const sgRow = toGuideSheetItemStatusGroupRow(sgNode);
+          if (!sgRow.ststus.trim()) {
+            return `"${entry.path}" — "${row.guideType}" / "${itemRow.guideItemText}" has a status group with no Status set — every status group needs one before export.`;
           }
         }
       }
@@ -1017,7 +1070,9 @@ export default function Home() {
                                     ? makeBlankRefInspectionResultGroupEntry()
                                     : category === "refLookupTable"
                                       ? makeBlankRefLookupTableEntry()
-                                      : null;
+                                      : category === "guideSheet"
+                                        ? makeBlankGuideSheetEntry()
+                                        : null;
       if (!blankEntry) return;
       if (
         zipResult &&
@@ -1095,6 +1150,9 @@ export default function Home() {
   const refLookupTableEntries = editableEntries.filter(
     (en): en is RefLookupTableZipEntry => en.kind === "refLookupTable"
   );
+  const guideSheetEntries = editableEntries.filter(
+    (en): en is GuideSheetZipEntry => en.kind === "guideSheet"
+  );
 
   const sensitiveMatches = zipResult
     ? detectSensitiveEntries(zipResult.entries.map((en) => en.path))
@@ -1130,7 +1188,8 @@ export default function Home() {
       validateTimeGroupEntries(timeGroupEntries) ??
       validateTimeTypesEntries(timeTypesEntries) ??
       validateRefInspectionResultGroupEntries(refInspectionResultGroupEntries) ??
-      validateRefLookupTableEntries(refLookupTableEntries);
+      validateRefLookupTableEntries(refLookupTableEntries) ??
+      validateGuideSheetEntries(guideSheetEntries);
     if (validationError) {
       setError(validationError);
       return;
@@ -1190,6 +1249,7 @@ export default function Home() {
     timeTypesEntries,
     refInspectionResultGroupEntries,
     refLookupTableEntries,
+    guideSheetEntries,
   ]);
 
   // Cascading on every keystroke would be wasteful (it touches every
@@ -1584,8 +1644,17 @@ export default function Home() {
               gridThemeClass={gridThemeClass}
               agencyId={agencyId}
             />
-          ) : (
+          ) : activeEntry.kind === "refLookupTable" ? (
             <RefLookupTableGrid
+              key={activeEntry.path}
+              ref={gridRef}
+              records={activeEntry.records}
+              onChange={handleDataChange}
+              gridThemeClass={gridThemeClass}
+              agencyId={agencyId}
+            />
+          ) : (
+            <GuideSheetGrid
               key={activeEntry.path}
               ref={gridRef}
               records={activeEntry.records}
