@@ -15,6 +15,7 @@ import GuideSheetGrid from "@/components/GuideSheetGrid";
 import RAPOTemplateGrid from "@/components/RAPOTemplateGrid";
 import SmartChoiceGroupGrid from "@/components/SmartChoiceGroupGrid";
 import StandardCommentGroupGrid from "@/components/StandardCommentGroupGrid";
+import RefFeeScheduleGrid from "@/components/RefFeeScheduleGrid";
 import FlatGrid, { type FlatGridColumnMeta } from "@/components/FlatGrid";
 import {
   getStandardChoiceValueNodes,
@@ -152,6 +153,13 @@ import {
   toStandardCommentGroupRow,
   toCommentGroupEntityRow,
 } from "@/lib/xml/standardCommentGroup";
+import {
+  getArmNodes as getRefFeeScheduleArmNodes,
+  inferCommonAgencyId as inferCommonAgencyIdRefFeeSchedule,
+  toRefFeeScheduleRow,
+  toRefFeeItemRow,
+  toFeeScheduleModuleRow,
+} from "@/lib/xml/refFeeSchedule";
 import { detectSensitiveEntries } from "@/lib/sensitiveFiles";
 import { exportZipInWorker, parseZipInWorker } from "@/lib/worker/client";
 import type {
@@ -173,6 +181,7 @@ import type {
   SmartChoiceGroupZipEntry,
   StandardChoiceZipEntry,
   StandardCommentGroupZipEntry,
+  RefFeeScheduleZipEntry,
   TimeGroupZipEntry,
   TimeTypesZipEntry,
   ZipEntryData,
@@ -204,7 +213,8 @@ type EditableZipEntry =
   | GuideSheetZipEntry
   | RAPOTemplateZipEntry
   | SmartChoiceGroupZipEntry
-  | StandardCommentGroupZipEntry;
+  | StandardCommentGroupZipEntry
+  | RefFeeScheduleZipEntry;
 
 function isEditableEntry(entry: ZipEntryData): entry is EditableZipEntry {
   return (
@@ -226,7 +236,8 @@ function isEditableEntry(entry: ZipEntryData): entry is EditableZipEntry {
     entry.kind === "guideSheet" ||
     entry.kind === "rapoTemplate" ||
     entry.kind === "smartChoiceGroup" ||
-    entry.kind === "standardCommentGroup"
+    entry.kind === "standardCommentGroup" ||
+    entry.kind === "refFeeSchedule"
   );
 }
 
@@ -276,6 +287,8 @@ function inferAgencyIdForEntry(entry: EditableZipEntry): string {
       return inferCommonAgencyIdSmartChoiceGroup(entry.records.map(toSmartChoiceGroupRow));
     case "standardCommentGroup":
       return inferCommonAgencyIdStandardCommentGroup(entry.records.map(toStandardCommentGroupRow));
+    case "refFeeSchedule":
+      return inferCommonAgencyIdRefFeeSchedule(entry.records.map(toRefFeeScheduleRow));
   }
 }
 
@@ -315,7 +328,7 @@ const CATEGORY_OPTIONS: { value: string; label: string; available: boolean }[] =
   { value: "guideSheet", label: "Guide Sheet", available: true },
   { value: "smartChoiceGroup", label: "Smart Choice Group", available: true },
   { value: "virtualProcess", label: "Virtual Process", available: false },
-  { value: "refFeeSchedule", label: "Ref Fee Schedule", available: false },
+  { value: "refFeeSchedule", label: "Ref Fee Schedule", available: true },
   { value: "capType", label: "Cap Type", available: false },
   { value: "acaConfiguration", label: "ACA Configuration", available: false },
   { value: "agencyGroup", label: "Agency Group", available: false },
@@ -692,6 +705,21 @@ function makeBlankStandardCommentGroupEntry(): StandardCommentGroupZipEntry {
   };
 }
 
+function makeBlankRefFeeScheduleEntry(): RefFeeScheduleZipEntry {
+  return {
+    path: "RefFeeScheduleModel.xml",
+    kind: "refFeeSchedule",
+    listAttrs: {
+      version: "9.0.0",
+      minorVersion: "26",
+      exportUser: "",
+      exportDateTime: "",
+      description: "null",
+    },
+    records: [],
+  };
+}
+
 function validateReferenceMaskEntries(entries: ReferenceMaskZipEntry[]): string | null {
   for (const entry of entries) {
     for (const record of entry.records) {
@@ -939,6 +967,30 @@ function validateStandardCommentGroupEntries(
           if (!entityRow.entityData.trim()) {
             return `"${entry.path}" — "${row.groupName}" has an entry with no Entity Data set — every entry needs one before export.`;
           }
+        }
+      }
+    }
+  }
+  return null;
+}
+
+function validateRefFeeScheduleEntries(entries: RefFeeScheduleZipEntry[]): string | null {
+  for (const entry of entries) {
+    for (const record of entry.records) {
+      const row = toRefFeeScheduleRow(record);
+      if (!row.feeScheduleName.trim()) {
+        return `"${entry.path}" has a Fee Schedule with no Fee Schedule Name set — every schedule needs a name before export.`;
+      }
+      for (const itemNode of getRefFeeScheduleArmNodes(record, "item")) {
+        const itemRow = toRefFeeItemRow(itemNode);
+        if (!itemRow.feeCod.trim()) {
+          return `"${entry.path}" — "${row.feeScheduleName}" has a fee item with no Fee Code set — every item needs one before export.`;
+        }
+      }
+      for (const modNode of getRefFeeScheduleArmNodes(record, "module")) {
+        const modRow = toFeeScheduleModuleRow(modNode);
+        if (!modRow.moduleName.trim()) {
+          return `"${entry.path}" — "${row.feeScheduleName}" has a module association with no Module Name set — every module needs one before export.`;
         }
       }
     }
@@ -1226,7 +1278,9 @@ export default function Home() {
                                             ? makeBlankSmartChoiceGroupEntry()
                                             : category === "standardCommentGroup"
                                               ? makeBlankStandardCommentGroupEntry()
-                                              : null;
+                                              : category === "refFeeSchedule"
+                                                ? makeBlankRefFeeScheduleEntry()
+                                                : null;
       if (!blankEntry) return;
       if (
         zipResult &&
@@ -1316,6 +1370,9 @@ export default function Home() {
   const standardCommentGroupEntries = editableEntries.filter(
     (en): en is StandardCommentGroupZipEntry => en.kind === "standardCommentGroup"
   );
+  const refFeeScheduleEntries = editableEntries.filter(
+    (en): en is RefFeeScheduleZipEntry => en.kind === "refFeeSchedule"
+  );
 
   const sensitiveMatches = zipResult
     ? detectSensitiveEntries(zipResult.entries.map((en) => en.path))
@@ -1355,7 +1412,8 @@ export default function Home() {
       validateGuideSheetEntries(guideSheetEntries) ??
       validateRAPOTemplateEntries(rapoTemplateEntries) ??
       validateSmartChoiceGroupEntries(smartChoiceGroupEntries) ??
-      validateStandardCommentGroupEntries(standardCommentGroupEntries);
+      validateStandardCommentGroupEntries(standardCommentGroupEntries) ??
+      validateRefFeeScheduleEntries(refFeeScheduleEntries);
     if (validationError) {
       setError(validationError);
       return;
@@ -1419,6 +1477,7 @@ export default function Home() {
     rapoTemplateEntries,
     smartChoiceGroupEntries,
     standardCommentGroupEntries,
+    refFeeScheduleEntries,
   ]);
 
   // Cascading on every keystroke would be wasteful (it touches every
@@ -1849,8 +1908,17 @@ export default function Home() {
               gridThemeClass={gridThemeClass}
               agencyId={agencyId}
             />
-          ) : (
+          ) : activeEntry.kind === "standardCommentGroup" ? (
             <StandardCommentGroupGrid
+              key={activeEntry.path}
+              ref={gridRef}
+              records={activeEntry.records}
+              onChange={handleDataChange}
+              gridThemeClass={gridThemeClass}
+              agencyId={agencyId}
+            />
+          ) : (
+            <RefFeeScheduleGrid
               key={activeEntry.path}
               ref={gridRef}
               records={activeEntry.records}

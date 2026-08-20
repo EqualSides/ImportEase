@@ -78,6 +78,11 @@ import {
   isStandardCommentGroupXml,
   parseStandardCommentGroupXml,
 } from "../xml/standardCommentGroup";
+import {
+  buildExportedRefFeeScheduleXml,
+  isRefFeeScheduleXml,
+  parseRefFeeScheduleXml,
+} from "../xml/refFeeSchedule";
 import type { ParseZipResult, ZipEntryData } from "../types";
 
 /**
@@ -127,6 +132,7 @@ const DETECTORS: {
     sniff: isStandardCommentGroupXml,
     parse: parseStandardCommentGroupXml,
   },
+  { kind: "refFeeSchedule", sniff: isRefFeeScheduleXml, parse: parseRefFeeScheduleXml },
 ];
 
 export async function parseUploadedZip(
@@ -274,6 +280,11 @@ export async function buildExportZip(entries: ZipEntryData[]): Promise<Uint8Arra
       zip.file(
         entry.path,
         buildExportedStandardCommentGroupXml({ listAttrs: entry.listAttrs, records: entry.records })
+      );
+    } else if (entry.kind === "refFeeSchedule") {
+      zip.file(
+        entry.path,
+        buildExportedRefFeeScheduleXml({ listAttrs: entry.listAttrs, records: entry.records })
       );
     } else {
       zip.file(entry.path, entry.bytes);
