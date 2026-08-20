@@ -154,6 +154,13 @@ export interface ASIGroupZipEntry {
   records: PNode[];
 }
 
+export interface CapTypeZipEntry {
+  path: string;
+  kind: "capType";
+  listAttrs: ListAttrs;
+  records: PNode[];
+}
+
 export interface PassthroughZipEntry {
   path: string;
   kind: "passthrough";
@@ -187,6 +194,7 @@ export type ZipEntryData =
   | RefFeeScheduleZipEntry
   | VirProcessZipEntry
   | ASIGroupZipEntry
+  | CapTypeZipEntry
   | PassthroughZipEntry;
 
 export interface ParseZipResult {

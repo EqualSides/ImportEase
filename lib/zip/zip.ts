@@ -85,6 +85,7 @@ import {
 } from "../xml/refFeeSchedule";
 import { buildExportedVirProcessXml, isVirProcessXml, parseVirProcessXml } from "../xml/virProcess";
 import { buildExportedASIGroupXml, isASIGroupXml, parseASIGroupXml } from "../xml/asiGroup";
+import { buildExportedCapTypeXml, isCapTypeXml, parseCapTypeXml } from "../xml/capType";
 import type { ParseZipResult, ZipEntryData } from "../types";
 
 /**
@@ -137,6 +138,7 @@ const DETECTORS: {
   { kind: "refFeeSchedule", sniff: isRefFeeScheduleXml, parse: parseRefFeeScheduleXml },
   { kind: "virProcess", sniff: isVirProcessXml, parse: parseVirProcessXml },
   { kind: "asiGroup", sniff: isASIGroupXml, parse: parseASIGroupXml },
+  { kind: "capType", sniff: isCapTypeXml, parse: parseCapTypeXml },
 ];
 
 export async function parseUploadedZip(
@@ -299,6 +301,11 @@ export async function buildExportZip(entries: ZipEntryData[]): Promise<Uint8Arra
       zip.file(
         entry.path,
         buildExportedASIGroupXml({ listAttrs: entry.listAttrs, records: entry.records })
+      );
+    } else if (entry.kind === "capType") {
+      zip.file(
+        entry.path,
+        buildExportedCapTypeXml({ listAttrs: entry.listAttrs, records: entry.records })
       );
     } else {
       zip.file(entry.path, entry.bytes);

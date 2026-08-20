@@ -178,6 +178,15 @@ import {
   toASIFieldRow,
   toASIDropdownValueRow,
 } from "@/lib/xml/asiGroup";
+import {
+  createCapTypeNode,
+  deleteCapType,
+  findCapTypeByUid,
+  inferCommonAgencyId as inferCommonAgencyIdCapType,
+  nextRefIdNumber as nextRefIdNumberCapType,
+  setCapTypeField,
+  toCapTypeRow,
+} from "@/lib/xml/capType";
 import { detectSensitiveEntries } from "@/lib/sensitiveFiles";
 import { exportZipInWorker, parseZipInWorker } from "@/lib/worker/client";
 import type {
@@ -202,6 +211,7 @@ import type {
   RefFeeScheduleZipEntry,
   VirProcessZipEntry,
   ASIGroupZipEntry,
+  CapTypeZipEntry,
   TimeGroupZipEntry,
   TimeTypesZipEntry,
   ZipEntryData,
@@ -236,7 +246,8 @@ type EditableZipEntry =
   | StandardCommentGroupZipEntry
   | RefFeeScheduleZipEntry
   | VirProcessZipEntry
-  | ASIGroupZipEntry;
+  | ASIGroupZipEntry
+  | CapTypeZipEntry;
 
 function isEditableEntry(entry: ZipEntryData): entry is EditableZipEntry {
   return (
@@ -261,7 +272,8 @@ function isEditableEntry(entry: ZipEntryData): entry is EditableZipEntry {
     entry.kind === "standardCommentGroup" ||
     entry.kind === "refFeeSchedule" ||
     entry.kind === "virProcess" ||
-    entry.kind === "asiGroup"
+    entry.kind === "asiGroup" ||
+    entry.kind === "capType"
   );
 }
 
@@ -317,6 +329,8 @@ function inferAgencyIdForEntry(entry: EditableZipEntry): string {
       return inferCommonAgencyIdVirProcess(entry.records.map(toVirProcessRow));
     case "asiGroup":
       return inferCommonAgencyIdASIGroup(entry.records.map(toASIGroupRow));
+    case "capType":
+      return inferCommonAgencyIdCapType(entry.records.map(toCapTypeRow));
   }
 }
 
@@ -357,7 +371,7 @@ const CATEGORY_OPTIONS: { value: string; label: string; available: boolean }[] =
   { value: "smartChoiceGroup", label: "Smart Choice Group", available: true },
   { value: "virProcess", label: "Virtual Process", available: true },
   { value: "refFeeSchedule", label: "Ref Fee Schedule", available: true },
-  { value: "capType", label: "Cap Type", available: false },
+  { value: "capType", label: "Cap Type", available: true },
   { value: "acaConfiguration", label: "ACA Configuration", available: false },
   { value: "agencyGroup", label: "Agency Group", available: false },
   { value: "formLayoutEditor", label: "Form Layout Editor", available: false },
@@ -778,6 +792,21 @@ function makeBlankASIGroupEntry(): ASIGroupZipEntry {
   };
 }
 
+function makeBlankCapTypeEntry(): CapTypeZipEntry {
+  return {
+    path: "CapTypeModel.xml",
+    kind: "capType",
+    listAttrs: {
+      version: "9.0.0",
+      minorVersion: "26",
+      exportUser: "",
+      exportDateTime: "",
+      description: "null",
+    },
+    records: [],
+  };
+}
+
 function validateReferenceMaskEntries(entries: ReferenceMaskZipEntry[]): string | null {
   for (const entry of entries) {
     for (const record of entry.records) {
@@ -1110,6 +1139,18 @@ function validateASIGroupEntries(entries: ASIGroupZipEntry[]): string | null {
   return null;
 }
 
+function validateCapTypeEntries(entries: CapTypeZipEntry[]): string | null {
+  for (const entry of entries) {
+    for (const record of entry.records) {
+      const row = toCapTypeRow(record);
+      if (!row.group.trim() || !row.type.trim()) {
+        return `"${entry.path}" has a Cap Type with no Group and/or Type set — every record type needs a Group and Type before export.`;
+      }
+    }
+  }
+  return null;
+}
+
 function withZipExtension(name: string): string {
   const trimmed = name.trim();
   if (!trimmed) return "export.zip";
@@ -1207,6 +1248,39 @@ const TIME_TYPES_COLUMNS: FlatGridColumnMeta[] = [
   { field: "r1PerType", headerName: "Type", editable: true, hide: true },
   { field: "timeTypeSeq", headerName: "Time Type Seq #", editable: true, hide: true },
   { field: "servProvCode", headerName: "Agency ID", editable: true, hide: true },
+];
+
+const CAP_TYPE_COLUMNS: FlatGridColumnMeta[] = [
+  { field: "refId", headerName: "Ref ID", editable: false, hide: true },
+  { field: "group", headerName: "Group", editable: true },
+  { field: "type", headerName: "Type", editable: true },
+  { field: "subType", headerName: "Sub Type", editable: true },
+  { field: "category", headerName: "Category", editable: true },
+  { field: "alias", headerName: "Alias", editable: true },
+  { field: "serviceProviderCode", headerName: "Agency ID", editable: true, hide: true },
+  { field: "moduleName", headerName: "Module", editable: true, hide: true },
+  { field: "processCode", headerName: "Process Code", editable: true, hide: true },
+  { field: "feeScheduleName", headerName: "Fee Schedule", editable: true, hide: true },
+  { field: "smartChoiceCode", headerName: "Smart Choice Group", editable: true, hide: true },
+  { field: "specInfoCode", headerName: "ASI Group", editable: true, hide: true },
+  { field: "docCode", headerName: "Document Code", editable: true, hide: true },
+  { field: "inspectionGroupCode", headerName: "Inspection Group", editable: true, hide: true },
+  { field: "appStatusGroupCode", headerName: "App Status Group", editable: true, hide: true },
+  { field: "defaultCapStatus", headerName: "Default Status", editable: true, hide: true },
+  { field: "expirationCode", headerName: "Expiration Code", editable: true, hide: true },
+  { field: "addrGroup", headerName: "Address Group", editable: true, hide: true },
+  { field: "asChildOnly", headerName: "As Child Only", editable: true, hide: true },
+  { field: "isRenewalOverride", headerName: "Renewal Override", editable: true, hide: true },
+  { field: "isSearchable", headerName: "Searchable", editable: true, hide: true },
+  { field: "isCloneOptionSelected", headerName: "Clone Option", editable: true, hide: true },
+  {
+    field: "isCheckedLiscenedVerification",
+    headerName: "License Verification",
+    editable: true,
+    hide: true,
+  },
+  { field: "udCode3", headerName: "UD Code 3", editable: true, hide: true },
+  { field: "resId", headerName: "Res ID", editable: true, hide: true },
 ];
 
 export default function Home() {
@@ -1396,7 +1470,9 @@ export default function Home() {
                                                   ? makeBlankVirProcessEntry()
                                                   : category === "asiGroup"
                                                     ? makeBlankASIGroupEntry()
-                                                    : null;
+                                                    : category === "capType"
+                                                      ? makeBlankCapTypeEntry()
+                                                      : null;
       if (!blankEntry) return;
       if (
         zipResult &&
@@ -1495,6 +1571,9 @@ export default function Home() {
   const asiGroupEntries = editableEntries.filter(
     (en): en is ASIGroupZipEntry => en.kind === "asiGroup"
   );
+  const capTypeEntries = editableEntries.filter(
+    (en): en is CapTypeZipEntry => en.kind === "capType"
+  );
 
   const sensitiveMatches = zipResult
     ? detectSensitiveEntries(zipResult.entries.map((en) => en.path))
@@ -1537,7 +1616,8 @@ export default function Home() {
       validateStandardCommentGroupEntries(standardCommentGroupEntries) ??
       validateRefFeeScheduleEntries(refFeeScheduleEntries) ??
       validateVirProcessEntries(virProcessEntries) ??
-      validateASIGroupEntries(asiGroupEntries);
+      validateASIGroupEntries(asiGroupEntries) ??
+      validateCapTypeEntries(capTypeEntries);
     if (validationError) {
       setError(validationError);
       return;
@@ -1604,6 +1684,7 @@ export default function Home() {
     refFeeScheduleEntries,
     virProcessEntries,
     asiGroupEntries,
+    capTypeEntries,
   ]);
 
   // Cascading on every keystroke would be wasteful (it touches every
@@ -2061,7 +2142,7 @@ export default function Home() {
               gridThemeClass={gridThemeClass}
               agencyId={agencyId}
             />
-          ) : (
+          ) : activeEntry.kind === "asiGroup" ? (
             <ASIGroupGrid
               key={activeEntry.path}
               ref={gridRef}
@@ -2069,6 +2150,25 @@ export default function Home() {
               onChange={handleDataChange}
               gridThemeClass={gridThemeClass}
               agencyId={agencyId}
+            />
+          ) : (
+            <FlatGrid
+              key={activeEntry.path}
+              ref={gridRef}
+              records={activeEntry.records}
+              onChange={handleDataChange}
+              gridThemeClass={gridThemeClass}
+              agencyId={agencyId}
+              columnMeta={CAP_TYPE_COLUMNS}
+              toRow={toCapTypeRow}
+              setField={setCapTypeField}
+              agencyIdField="serviceProviderCode"
+              createNode={createCapTypeNode}
+              nextRefIdNumber={nextRefIdNumberCapType}
+              findByUid={findCapTypeByUid}
+              deleteNode={deleteCapType}
+              toolbarLabel="Cap Types"
+              addButtonLabel="+ Add Cap Type"
             />
           )
         ) : (
