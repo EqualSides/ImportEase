@@ -16,7 +16,7 @@ const jetbrainsMono = JetBrains_Mono({
 
 export const metadata: Metadata = {
   title: "ImportEase",
-  description: "Accela Configuration Manager import/export tool",
+  description: "Addon tool for Accela Configuration Manager",
 };
 
 export default function RootLayout({
