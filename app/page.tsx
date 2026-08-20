@@ -400,55 +400,47 @@ function inferAgencyIdForEntry(entry: EditableZipEntry): string {
 
 const THEME_STORAGE_KEY = "importease-theme";
 
-// Full category catalog (see category-catalog.md) so the "start new file"
-// picker shows what's coming, not just what's built — Data Manager Version
+// Every buildable category (see category-catalog.md) — only ones this app
+// can actually create/edit are listed, so "start new file" always produces
+// a working grid. ACA Configuration, Agency Group, and Ref Calendar are
+// excluded for data/architecture reasons documented at each of their
+// DETECTORS/module call sites; User/User Profiles are excluded by explicit
+// user decision, since unlike every other flagged category (which embeds
+// security *references*), these files carry the credential-tier data
+// itself — real hashed passwords and login metadata. Data Manager Version
 // (tooling metadata, not editable config) and Workflow (confirmed
 // view/pass-through only, never editable — see architecture-and-safety-
-// update.md) are intentionally excluded, since neither is ever a "start
-// blank and fill in" target.
-//
-// User/User Profiles stay available:false by explicit user decision, not
-// a technical gap: unlike every other flagged category (which embeds
-// security *references*), these files carry the actual credential-tier
-// data itself — real hashed passwords and login metadata — and building
-// an editable grid for that is a materially different call than the
-// "embedded" sensitivity tier in lib/sensitiveFiles.ts. ACA Configuration,
-// Agency Group, and Ref Calendar remain false for the data/architecture
-// reasons documented at each of their DETECTORS/module call sites.
-const CATEGORY_OPTIONS: { value: string; label: string; available: boolean }[] = [
-  { value: "acaConfiguration", label: "ACA Configuration", available: false },
-  { value: "agencyGroup", label: "Agency Group", available: false },
-  { value: "applicationStatusGroup", label: "Application Status Group", available: true },
-  { value: "asiGroup", label: "ASI Groups", available: true },
-  { value: "capType", label: "Cap Type", available: true },
-  { value: "checklistGroup", label: "Checklist Group", available: true },
-  { value: "commentGroup", label: "Comment Group", available: true },
-  { value: "conditions", label: "Conditions", available: true },
-  { value: "departmentType", label: "Department Type", available: true },
-  { value: "emailMessage", label: "Email Message", available: true },
-  { value: "formLayoutEditor", label: "Form Layout Editor", available: true },
-  { value: "guideSheet", label: "Guide Sheet", available: true },
-  { value: "inspRelateInsp", label: "Insp Relate Insp", available: true },
-  { value: "inspectionGroup", label: "Inspection Group", available: true },
-  { value: "organizationAgency", label: "Organization/Agency", available: true },
-  { value: "rapoTemplate", label: "RAPO Template", available: true },
-  { value: "refAddressTypeGroup", label: "Ref Address Type Group", available: true },
-  { value: "refCalendar", label: "Ref Calendar", available: false },
-  { value: "refDocument", label: "Ref Document", available: true },
-  { value: "refFeeSchedule", label: "Ref Fee Schedule", available: true },
-  { value: "refInspectionResultGroup", label: "Ref Inspection Result Group", available: true },
-  { value: "refLookupTable", label: "Ref Lookup Table", available: true },
-  { value: "referenceMask", label: "Reference Mask", available: true },
-  { value: "sequence", label: "Sequence", available: true },
-  { value: "sharedDropDown", label: "Shared Drop-down List", available: true },
-  { value: "smartChoiceGroup", label: "Smart Choice Group", available: true },
-  { value: "standardChoice", label: "Standard Choice", available: true },
-  { value: "standardCommentGroup", label: "Standard Comment Group", available: true },
-  { value: "timeGroup", label: "Time Group", available: true },
-  { value: "timeTypes", label: "Time Types", available: true },
-  { value: "user", label: "User", available: false },
-  { value: "userProfiles", label: "User Profiles", available: false },
-  { value: "virProcess", label: "Virtual Process", available: true },
+// update.md) were never in scope, since neither is ever a "start blank and
+// fill in" target.
+const CATEGORY_OPTIONS: { value: string; label: string }[] = [
+  { value: "applicationStatusGroup", label: "Application Status Group" },
+  { value: "asiGroup", label: "ASI Groups" },
+  { value: "capType", label: "Cap Type" },
+  { value: "checklistGroup", label: "Checklist Group" },
+  { value: "commentGroup", label: "Comment Group" },
+  { value: "conditions", label: "Conditions" },
+  { value: "departmentType", label: "Department Type" },
+  { value: "emailMessage", label: "Email Message" },
+  { value: "formLayoutEditor", label: "Form Layout Editor" },
+  { value: "guideSheet", label: "Guide Sheet" },
+  { value: "inspRelateInsp", label: "Insp Relate Insp" },
+  { value: "inspectionGroup", label: "Inspection Group" },
+  { value: "organizationAgency", label: "Organization/Agency" },
+  { value: "rapoTemplate", label: "RAPO Template" },
+  { value: "refAddressTypeGroup", label: "Ref Address Type Group" },
+  { value: "refDocument", label: "Ref Document" },
+  { value: "refFeeSchedule", label: "Ref Fee Schedule" },
+  { value: "refInspectionResultGroup", label: "Ref Inspection Result Group" },
+  { value: "refLookupTable", label: "Ref Lookup Table" },
+  { value: "referenceMask", label: "Reference Mask" },
+  { value: "sequence", label: "Sequence" },
+  { value: "sharedDropDown", label: "Shared Drop-down List" },
+  { value: "smartChoiceGroup", label: "Smart Choice Group" },
+  { value: "standardChoice", label: "Standard Choice" },
+  { value: "standardCommentGroup", label: "Standard Comment Group" },
+  { value: "timeGroup", label: "Time Group" },
+  { value: "timeTypes", label: "Time Types" },
+  { value: "virProcess", label: "Virtual Process" },
 ];
 
 // Fields the schema doc (docs/schema-standard-choice.md) marks "always" —
@@ -2106,7 +2098,7 @@ export default function Home() {
             Start new file
           </option>
           {CATEGORY_OPTIONS.map((c) => (
-            <option key={c.value} value={c.value} disabled={!c.available}>
+            <option key={c.value} value={c.value}>
               {c.label}
             </option>
           ))}
