@@ -140,6 +140,13 @@ export interface RefFeeScheduleZipEntry {
   records: PNode[];
 }
 
+export interface VirProcessZipEntry {
+  path: string;
+  kind: "virProcess";
+  listAttrs: ListAttrs;
+  records: PNode[];
+}
+
 export interface PassthroughZipEntry {
   path: string;
   kind: "passthrough";
@@ -171,6 +178,7 @@ export type ZipEntryData =
   | SmartChoiceGroupZipEntry
   | StandardCommentGroupZipEntry
   | RefFeeScheduleZipEntry
+  | VirProcessZipEntry
   | PassthroughZipEntry;
 
 export interface ParseZipResult {

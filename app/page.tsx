@@ -16,6 +16,7 @@ import RAPOTemplateGrid from "@/components/RAPOTemplateGrid";
 import SmartChoiceGroupGrid from "@/components/SmartChoiceGroupGrid";
 import StandardCommentGroupGrid from "@/components/StandardCommentGroupGrid";
 import RefFeeScheduleGrid from "@/components/RefFeeScheduleGrid";
+import VirProcessGrid from "@/components/VirProcessGrid";
 import FlatGrid, { type FlatGridColumnMeta } from "@/components/FlatGrid";
 import {
   getStandardChoiceValueNodes,
@@ -160,6 +161,14 @@ import {
   toRefFeeItemRow,
   toFeeScheduleModuleRow,
 } from "@/lib/xml/refFeeSchedule";
+import {
+  getArmNodes as getVirProcessArmNodes,
+  inferCommonAgencyId as inferCommonAgencyIdVirProcess,
+  toVirProcessRow,
+  toProcessTaskRow,
+  toProcessEmailSettingRow,
+  toActivityStatusRow,
+} from "@/lib/xml/virProcess";
 import { detectSensitiveEntries } from "@/lib/sensitiveFiles";
 import { exportZipInWorker, parseZipInWorker } from "@/lib/worker/client";
 import type {
@@ -182,6 +191,7 @@ import type {
   StandardChoiceZipEntry,
   StandardCommentGroupZipEntry,
   RefFeeScheduleZipEntry,
+  VirProcessZipEntry,
   TimeGroupZipEntry,
   TimeTypesZipEntry,
   ZipEntryData,
@@ -214,7 +224,8 @@ type EditableZipEntry =
   | RAPOTemplateZipEntry
   | SmartChoiceGroupZipEntry
   | StandardCommentGroupZipEntry
-  | RefFeeScheduleZipEntry;
+  | RefFeeScheduleZipEntry
+  | VirProcessZipEntry;
 
 function isEditableEntry(entry: ZipEntryData): entry is EditableZipEntry {
   return (
@@ -237,7 +248,8 @@ function isEditableEntry(entry: ZipEntryData): entry is EditableZipEntry {
     entry.kind === "rapoTemplate" ||
     entry.kind === "smartChoiceGroup" ||
     entry.kind === "standardCommentGroup" ||
-    entry.kind === "refFeeSchedule"
+    entry.kind === "refFeeSchedule" ||
+    entry.kind === "virProcess"
   );
 }
 
@@ -289,6 +301,8 @@ function inferAgencyIdForEntry(entry: EditableZipEntry): string {
       return inferCommonAgencyIdStandardCommentGroup(entry.records.map(toStandardCommentGroupRow));
     case "refFeeSchedule":
       return inferCommonAgencyIdRefFeeSchedule(entry.records.map(toRefFeeScheduleRow));
+    case "virProcess":
+      return inferCommonAgencyIdVirProcess(entry.records.map(toVirProcessRow));
   }
 }
 
@@ -327,7 +341,7 @@ const CATEGORY_OPTIONS: { value: string; label: string; available: boolean }[] =
   { value: "refDocument", label: "Ref Document", available: false },
   { value: "guideSheet", label: "Guide Sheet", available: true },
   { value: "smartChoiceGroup", label: "Smart Choice Group", available: true },
-  { value: "virtualProcess", label: "Virtual Process", available: false },
+  { value: "virProcess", label: "Virtual Process", available: true },
   { value: "refFeeSchedule", label: "Ref Fee Schedule", available: true },
   { value: "capType", label: "Cap Type", available: false },
   { value: "acaConfiguration", label: "ACA Configuration", available: false },
@@ -720,6 +734,21 @@ function makeBlankRefFeeScheduleEntry(): RefFeeScheduleZipEntry {
   };
 }
 
+function makeBlankVirProcessEntry(): VirProcessZipEntry {
+  return {
+    path: "VirProcessModel.xml",
+    kind: "virProcess",
+    listAttrs: {
+      version: "9.0.0",
+      minorVersion: "26",
+      exportUser: "",
+      exportDateTime: "",
+      description: "null",
+    },
+    records: [],
+  };
+}
+
 function validateReferenceMaskEntries(entries: ReferenceMaskZipEntry[]): string | null {
   for (const entry of entries) {
     for (const record of entry.records) {
@@ -991,6 +1020,36 @@ function validateRefFeeScheduleEntries(entries: RefFeeScheduleZipEntry[]): strin
         const modRow = toFeeScheduleModuleRow(modNode);
         if (!modRow.moduleName.trim()) {
           return `"${entry.path}" — "${row.feeScheduleName}" has a module association with no Module Name set — every module needs one before export.`;
+        }
+      }
+    }
+  }
+  return null;
+}
+
+function validateVirProcessEntries(entries: VirProcessZipEntry[]): string | null {
+  for (const entry of entries) {
+    for (const record of entry.records) {
+      const row = toVirProcessRow(record);
+      if (!row.r1ProcessCode.trim()) {
+        return `"${entry.path}" has a Process with no Process Code set — every process needs a Process Code before export.`;
+      }
+      for (const taskNode of getVirProcessArmNodes(record, "task")) {
+        const taskRow = toProcessTaskRow(taskNode);
+        if (!taskRow.sdProDes.trim()) {
+          return `"${entry.path}" — "${row.r1ProcessCode}" has a task with no Task Description set — every task needs one before export.`;
+        }
+      }
+      for (const emailNode of getVirProcessArmNodes(record, "email")) {
+        const emailRow = toProcessEmailSettingRow(emailNode);
+        if (!emailRow.contentsCode.trim()) {
+          return `"${entry.path}" — "${row.r1ProcessCode}" has an email setting with no Contents Code set — every email setting needs one before export.`;
+        }
+      }
+      for (const statusNode of getVirProcessArmNodes(record, "status")) {
+        const statusRow = toActivityStatusRow(statusNode);
+        if (!statusRow.r3ActStatDes.trim()) {
+          return `"${entry.path}" — "${row.r1ProcessCode}" has a status with no Status Description set — every status needs one before export.`;
         }
       }
     }
@@ -1280,7 +1339,9 @@ export default function Home() {
                                               ? makeBlankStandardCommentGroupEntry()
                                               : category === "refFeeSchedule"
                                                 ? makeBlankRefFeeScheduleEntry()
-                                                : null;
+                                                : category === "virProcess"
+                                                  ? makeBlankVirProcessEntry()
+                                                  : null;
       if (!blankEntry) return;
       if (
         zipResult &&
@@ -1373,6 +1434,9 @@ export default function Home() {
   const refFeeScheduleEntries = editableEntries.filter(
     (en): en is RefFeeScheduleZipEntry => en.kind === "refFeeSchedule"
   );
+  const virProcessEntries = editableEntries.filter(
+    (en): en is VirProcessZipEntry => en.kind === "virProcess"
+  );
 
   const sensitiveMatches = zipResult
     ? detectSensitiveEntries(zipResult.entries.map((en) => en.path))
@@ -1413,7 +1477,8 @@ export default function Home() {
       validateRAPOTemplateEntries(rapoTemplateEntries) ??
       validateSmartChoiceGroupEntries(smartChoiceGroupEntries) ??
       validateStandardCommentGroupEntries(standardCommentGroupEntries) ??
-      validateRefFeeScheduleEntries(refFeeScheduleEntries);
+      validateRefFeeScheduleEntries(refFeeScheduleEntries) ??
+      validateVirProcessEntries(virProcessEntries);
     if (validationError) {
       setError(validationError);
       return;
@@ -1478,6 +1543,7 @@ export default function Home() {
     smartChoiceGroupEntries,
     standardCommentGroupEntries,
     refFeeScheduleEntries,
+    virProcessEntries,
   ]);
 
   // Cascading on every keystroke would be wasteful (it touches every
@@ -1917,8 +1983,17 @@ export default function Home() {
               gridThemeClass={gridThemeClass}
               agencyId={agencyId}
             />
-          ) : (
+          ) : activeEntry.kind === "refFeeSchedule" ? (
             <RefFeeScheduleGrid
+              key={activeEntry.path}
+              ref={gridRef}
+              records={activeEntry.records}
+              onChange={handleDataChange}
+              gridThemeClass={gridThemeClass}
+              agencyId={agencyId}
+            />
+          ) : (
+            <VirProcessGrid
               key={activeEntry.path}
               ref={gridRef}
               records={activeEntry.records}

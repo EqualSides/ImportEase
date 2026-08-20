@@ -83,6 +83,7 @@ import {
   isRefFeeScheduleXml,
   parseRefFeeScheduleXml,
 } from "../xml/refFeeSchedule";
+import { buildExportedVirProcessXml, isVirProcessXml, parseVirProcessXml } from "../xml/virProcess";
 import type { ParseZipResult, ZipEntryData } from "../types";
 
 /**
@@ -133,6 +134,7 @@ const DETECTORS: {
     parse: parseStandardCommentGroupXml,
   },
   { kind: "refFeeSchedule", sniff: isRefFeeScheduleXml, parse: parseRefFeeScheduleXml },
+  { kind: "virProcess", sniff: isVirProcessXml, parse: parseVirProcessXml },
 ];
 
 export async function parseUploadedZip(
@@ -285,6 +287,11 @@ export async function buildExportZip(entries: ZipEntryData[]): Promise<Uint8Arra
       zip.file(
         entry.path,
         buildExportedRefFeeScheduleXml({ listAttrs: entry.listAttrs, records: entry.records })
+      );
+    } else if (entry.kind === "virProcess") {
+      zip.file(
+        entry.path,
+        buildExportedVirProcessXml({ listAttrs: entry.listAttrs, records: entry.records })
       );
     } else {
       zip.file(entry.path, entry.bytes);
