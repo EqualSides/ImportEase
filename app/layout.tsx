@@ -17,6 +17,15 @@ const jetbrainsMono = JetBrains_Mono({
 export const metadata: Metadata = {
   title: "ImportEase",
   description: "Addon tool for Accela Configuration Manager",
+  openGraph: {
+    title: "ImportEase",
+    description: "Addon tool for Accela Configuration Manager",
+  },
+  twitter: {
+    card: "summary",
+    title: "ImportEase",
+    description: "Addon tool for Accela Configuration Manager",
+  },
 };
 
 export default function RootLayout({
