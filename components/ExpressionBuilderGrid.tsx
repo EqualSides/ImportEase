@@ -39,6 +39,7 @@ import {
   toExpressCriteriaRow,
   toExpressFieldRow,
 } from "@/lib/xml/expressionBuilder";
+import { type LintFinding, lintExpression } from "@/lib/xml/expressionLint";
 
 /**
  * The fourth "heterogeneous-arm" grid (see VirProcessGrid.tsx for the
@@ -199,6 +200,7 @@ const ExpressionBuilderGrid = forwardRef<ExpressionBuilderGridHandle, Props>(
     const [exprRows, setExprRows] = useState<ExpressionRow[]>(() => records.map(toExpressionRow));
     const [selectedExprUid, setSelectedExprUid] = useState<string | null>(exprRows[0]?.uid ?? null);
     const [selectedArm, setSelectedArm] = useState<ArmKey>("calc");
+    const [lintFindings, setLintFindings] = useState<LintFinding[] | null>(null);
 
     const selectedExprNode = useMemo(
       () => (selectedExprUid ? findExpressionByUid(records, selectedExprUid) ?? null : null),
@@ -437,6 +439,56 @@ const ExpressionBuilderGrid = forwardRef<ExpressionBuilderGridHandle, Props>(
       onChange();
     }, [selectedExprNode, selectedArm, refreshArmRows, refreshExprRow, onChange]);
 
+    const runLint = useCallback(() => {
+      if (!selectedExprNode) return;
+      const exprRow = toExpressionRow(selectedExprNode);
+      const calc = getArmNodes(selectedExprNode, "calc").map(toExpressCalculationRow);
+      const criteria = getArmNodes(selectedExprNode, "criteria").map(toExpressCriteriaRow);
+      const field = getArmNodes(selectedExprNode, "field").map(toExpressFieldRow);
+      setLintFindings(lintExpression(exprRow, calc, criteria, field));
+    }, [selectedExprNode]);
+
+    const dismissFinding = useCallback((id: string) => {
+      setLintFindings((prev) => (prev ? prev.filter((f) => f.id !== id) : prev));
+    }, []);
+
+    const applyLintFix = useCallback(
+      (finding: LintFinding) => {
+        if (!finding.fix || !selectedExprNode) return;
+        const { arm, uid, field, newValue } = finding.fix;
+        if (arm === "expr") {
+          setExpressionField(selectedExprNode, field, newValue);
+          refreshExprRow(selectedExprNode);
+        } else {
+          const node = findArmNodeByUid(selectedExprNode, arm, uid);
+          if (!node) return;
+          setArmField(arm, node, field, newValue);
+          if (selectedArm === arm) {
+            const updated = toArmRow(arm, node);
+            setArmRows((prev) => prev.map((r) => (r.uid === updated.uid ? updated : r)));
+          }
+        }
+        onChange();
+        dismissFinding(finding.id);
+      },
+      [selectedExprNode, selectedArm, refreshExprRow, onChange, dismissFinding]
+    );
+
+    const applyLintDelete = useCallback(
+      (finding: LintFinding) => {
+        if (!finding.deletable || !selectedExprNode) return;
+        const { arm, uid } = finding.deletable;
+        const node = findArmNodeByUid(selectedExprNode, arm, uid);
+        if (!node) return;
+        deleteArmNode(selectedExprNode, arm, node);
+        if (selectedArm === arm) refreshArmRows(selectedExprNode, arm);
+        refreshExprRow(selectedExprNode);
+        onChange();
+        dismissFinding(finding.id);
+      },
+      [selectedExprNode, selectedArm, refreshArmRows, refreshExprRow, onChange, dismissFinding]
+    );
+
     const selectedExprRow = selectedExprNode ? toExpressionRow(selectedExprNode) : null;
 
     return (
@@ -462,6 +514,9 @@ const ExpressionBuilderGrid = forwardRef<ExpressionBuilderGridHandle, Props>(
             </button>
             <button className="btn btn-danger" onClick={deleteSelectedExprRows}>
               Delete Selected
+            </button>
+            <button className="btn" onClick={runLint} disabled={!selectedExprNode}>
+              Check Code
             </button>
             <span className="grid-toolbar-label">
               Expressions ({exprRows.length})
@@ -543,6 +598,65 @@ const ExpressionBuilderGrid = forwardRef<ExpressionBuilderGridHandle, Props>(
             />
           </div>
         </div>
+
+        {lintFindings !== null && (
+          <div className="auth-modal-backdrop" onClick={() => setLintFindings(null)}>
+            <div className="auth-modal lint-modal" onClick={(e) => e.stopPropagation()}>
+              <button
+                className="auth-modal-close"
+                onClick={() => setLintFindings(null)}
+                aria-label="Close"
+              >
+                ×
+              </button>
+              <h2 className="lint-modal-title">
+                Code Check{selectedExprRow ? ` — ${selectedExprRow.expressionName || "(unnamed)"}` : ""}
+              </h2>
+              {lintFindings.length === 0 ? (
+                <p className="auth-form-hint">No issues found.</p>
+              ) : (
+                <div className="admin-request-list lint-findings">
+                  {lintFindings.map((f) => (
+                    <div key={f.id} className="admin-request-row lint-finding">
+                      <div className="lint-finding-header">
+                        <span className={`lint-badge lint-badge-${f.category}`}>
+                          {f.category === "unused-variable"
+                            ? "Unused Variable"
+                            : f.category === "syntax-error"
+                              ? "Syntax Error"
+                              : "Simplify"}
+                        </span>
+                        <span className="admin-request-meta">{f.location}</span>
+                      </div>
+                      <div className="admin-request-message">{f.message}</div>
+                      {f.before !== undefined && f.after !== undefined && (
+                        <div className="lint-diff">
+                          <div className="lint-diff-before">− {f.before}</div>
+                          <div className="lint-diff-after">+ {f.after}</div>
+                        </div>
+                      )}
+                      <div className="admin-request-actions">
+                        {f.fix && (
+                          <button className="auth-submit" onClick={() => applyLintFix(f)}>
+                            Apply Fix
+                          </button>
+                        )}
+                        {f.deletable && (
+                          <button className="btn btn-danger" onClick={() => applyLintDelete(f)}>
+                            Delete Row
+                          </button>
+                        )}
+                        <button className="btn" onClick={() => dismissFinding(f.id)}>
+                          Dismiss
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     );
   }

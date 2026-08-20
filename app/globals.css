@@ -785,3 +785,66 @@ body.resizing-panels {
   color: var(--accent-amber-text);
   font-weight: 600;
 }
+
+/* Expression Builder code check ------------------------------------------ */
+
+.lint-modal {
+  width: 560px;
+}
+
+.lint-modal-title {
+  margin: 0 0 14px;
+  font-size: 15px;
+}
+
+.lint-findings {
+  max-height: 65vh;
+}
+
+.lint-finding-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.lint-badge {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+}
+
+.lint-badge-syntax-error {
+  color: var(--accent-danger-text);
+}
+
+.lint-badge-unused-variable {
+  color: var(--accent-amber-text);
+}
+
+.lint-badge-simplify {
+  color: var(--accent-cyan-text);
+}
+
+.lint-diff {
+  font-family: var(--font-mono), monospace;
+  font-size: 11px;
+  background: var(--bg-base);
+  border: 1px solid var(--border-hairline);
+  border-radius: 6px;
+  padding: 6px 8px;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.lint-diff-before {
+  color: var(--accent-danger-text);
+}
+
+.lint-diff-after {
+  color: var(--accent-cyan-text);
+}
