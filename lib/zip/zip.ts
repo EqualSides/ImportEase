@@ -24,6 +24,17 @@ import {
   isRefAddressTypeGroupXml,
   parseRefAddressTypeGroupXml,
 } from "../xml/refAddressTypeGroup";
+import {
+  buildExportedReferenceMaskXml,
+  isReferenceMaskXml,
+  parseReferenceMaskXml,
+} from "../xml/referenceMask";
+import {
+  buildExportedEmailMessageXml,
+  isEmailMessageXml,
+  parseEmailMessageXml,
+} from "../xml/emailMessage";
+import { buildExportedSequenceXml, isSequenceXml, parseSequenceXml } from "../xml/sequence";
 import type { ParseZipResult, ZipEntryData } from "../types";
 
 /**
@@ -47,6 +58,9 @@ const DETECTORS: {
     sniff: isRefAddressTypeGroupXml,
     parse: parseRefAddressTypeGroupXml,
   },
+  { kind: "referenceMask", sniff: isReferenceMaskXml, parse: parseReferenceMaskXml },
+  { kind: "emailMessage", sniff: isEmailMessageXml, parse: parseEmailMessageXml },
+  { kind: "sequence", sniff: isSequenceXml, parse: parseSequenceXml },
 ];
 
 export async function parseUploadedZip(
@@ -118,6 +132,21 @@ export async function buildExportZip(entries: ZipEntryData[]): Promise<Uint8Arra
       zip.file(
         entry.path,
         buildExportedRefAddressTypeGroupXml({ listAttrs: entry.listAttrs, records: entry.records })
+      );
+    } else if (entry.kind === "referenceMask") {
+      zip.file(
+        entry.path,
+        buildExportedReferenceMaskXml({ listAttrs: entry.listAttrs, records: entry.records })
+      );
+    } else if (entry.kind === "emailMessage") {
+      zip.file(
+        entry.path,
+        buildExportedEmailMessageXml({ listAttrs: entry.listAttrs, records: entry.records })
+      );
+    } else if (entry.kind === "sequence") {
+      zip.file(
+        entry.path,
+        buildExportedSequenceXml({ listAttrs: entry.listAttrs, records: entry.records })
       );
     } else {
       zip.file(entry.path, entry.bytes);

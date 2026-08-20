@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import StandardChoiceGrid from "@/components/StandardChoiceGrid";
 import SharedDropDownGrid from "@/components/SharedDropDownGrid";
 import RefAddressTypeGroupGrid from "@/components/RefAddressTypeGroupGrid";
+import SequenceGrid from "@/components/SequenceGrid";
 import FlatGrid, { type FlatGridColumnMeta } from "@/components/FlatGrid";
 import {
   getStandardChoiceValueNodes,
@@ -41,13 +42,40 @@ import {
   toRefAddressTypeGroupRow,
   toRefAddressTypeRow,
 } from "@/lib/xml/refAddressTypeGroup";
+import {
+  createReferenceMaskNode,
+  deleteReferenceMask,
+  findReferenceMaskByUid,
+  inferCommonAgencyId as inferCommonAgencyIdReferenceMask,
+  nextRefIdNumber as nextRefIdNumberReferenceMask,
+  setReferenceMaskField,
+  toReferenceMaskRow,
+} from "@/lib/xml/referenceMask";
+import {
+  createEmailMessageNode,
+  deleteEmailMessage,
+  findEmailMessageByUid,
+  inferCommonAgencyId as inferCommonAgencyIdEmailMessage,
+  nextRefIdNumber as nextRefIdNumberEmailMessage,
+  setEmailMessageField,
+  toEmailMessageRow,
+} from "@/lib/xml/emailMessage";
+import {
+  getSequenceIntervalNodes,
+  inferCommonAgencyId as inferCommonAgencyIdSequence,
+  toSequenceIntervalRow,
+  toSequenceRow,
+} from "@/lib/xml/sequence";
 import { detectSensitiveEntries } from "@/lib/sensitiveFiles";
 import { exportZipInWorker, parseZipInWorker } from "@/lib/worker/client";
 import type {
+  EmailMessageZipEntry,
   InspRelateInspZipEntry,
   OrganizationAgencyZipEntry,
   ParseZipResult,
   RefAddressTypeGroupZipEntry,
+  ReferenceMaskZipEntry,
+  SequenceZipEntry,
   SharedDropDownZipEntry,
   StandardChoiceZipEntry,
   ZipEntryData,
@@ -65,7 +93,10 @@ type EditableZipEntry =
   | SharedDropDownZipEntry
   | OrganizationAgencyZipEntry
   | InspRelateInspZipEntry
-  | RefAddressTypeGroupZipEntry;
+  | RefAddressTypeGroupZipEntry
+  | ReferenceMaskZipEntry
+  | EmailMessageZipEntry
+  | SequenceZipEntry;
 
 function isEditableEntry(entry: ZipEntryData): entry is EditableZipEntry {
   return (
@@ -73,7 +104,10 @@ function isEditableEntry(entry: ZipEntryData): entry is EditableZipEntry {
     entry.kind === "sharedDropDown" ||
     entry.kind === "organizationAgency" ||
     entry.kind === "inspRelateInsp" ||
-    entry.kind === "refAddressTypeGroup"
+    entry.kind === "refAddressTypeGroup" ||
+    entry.kind === "referenceMask" ||
+    entry.kind === "emailMessage" ||
+    entry.kind === "sequence"
   );
 }
 
@@ -91,6 +125,12 @@ function inferAgencyIdForEntry(entry: EditableZipEntry): string {
       return inferCommonAgencyIdInspRelateInsp(entry.records.map(toInspRelateInspRow));
     case "refAddressTypeGroup":
       return inferCommonAgencyIdRefAddressTypeGroup(entry.records.map(toRefAddressTypeGroupRow));
+    case "referenceMask":
+      return inferCommonAgencyIdReferenceMask(entry.records.map(toReferenceMaskRow));
+    case "emailMessage":
+      return inferCommonAgencyIdEmailMessage(entry.records.map(toEmailMessageRow));
+    case "sequence":
+      return inferCommonAgencyIdSequence(entry.records.map(toSequenceRow));
   }
 }
 
@@ -113,16 +153,16 @@ const CATEGORY_OPTIONS: { value: string; label: string; available: boolean }[] =
   { value: "timeGroup", label: "Time Group", available: false },
   { value: "timeTypes", label: "Time Types", available: false },
   { value: "checklistGroup", label: "Checklist Group", available: false },
-  { value: "referenceMask", label: "Reference Mask", available: false },
+  { value: "referenceMask", label: "Reference Mask", available: true },
   { value: "refLookupTable", label: "Ref Lookup Table", available: false },
-  { value: "emailMessage", label: "Email Message", available: false },
+  { value: "emailMessage", label: "Email Message", available: true },
   { value: "userProfiles", label: "User Profiles", available: false },
   { value: "standardCommentGroup", label: "Standard Comment Group", available: false },
   { value: "departmentType", label: "Department Type", available: false },
   { value: "user", label: "User", available: false },
   { value: "refInspectionResultGroup", label: "Ref Inspection Result Group", available: false },
   { value: "commentGroup", label: "Comment Group", available: false },
-  { value: "sequence", label: "Sequence", available: false },
+  { value: "sequence", label: "Sequence", available: true },
   { value: "applicationStatusGroup", label: "Application Status Group", available: false },
   { value: "refCalendar", label: "Ref Calendar", available: false },
   { value: "inspectionGroup", label: "Inspection Group", available: false },
@@ -297,6 +337,93 @@ function validateRefAddressTypeGroupEntries(entries: RefAddressTypeGroupZipEntry
   return null;
 }
 
+function makeBlankReferenceMaskEntry(): ReferenceMaskZipEntry {
+  return {
+    path: "ReferenceMaskModel.xml",
+    kind: "referenceMask",
+    listAttrs: {
+      version: "9.0.0",
+      minorVersion: "26",
+      exportUser: "",
+      exportDateTime: "",
+      description: "null",
+    },
+    records: [],
+  };
+}
+
+function makeBlankEmailMessageEntry(): EmailMessageZipEntry {
+  return {
+    path: "EmailMessageModel.xml",
+    kind: "emailMessage",
+    listAttrs: {
+      version: "9.0.0",
+      minorVersion: "26",
+      exportUser: "",
+      exportDateTime: "",
+      description: "null",
+    },
+    records: [],
+  };
+}
+
+function makeBlankSequenceEntry(): SequenceZipEntry {
+  return {
+    path: "SequenceModel.xml",
+    kind: "sequence",
+    listAttrs: {
+      version: "9.0.0",
+      minorVersion: "26",
+      exportUser: "",
+      exportDateTime: "",
+      description: "null",
+    },
+    records: [],
+  };
+}
+
+function validateReferenceMaskEntries(entries: ReferenceMaskZipEntry[]): string | null {
+  for (const entry of entries) {
+    for (const record of entry.records) {
+      const row = toReferenceMaskRow(record);
+      if (!row.name.trim()) {
+        return `"${entry.path}" has a Reference Mask with no Name set — every mask needs a Name before export.`;
+      }
+    }
+  }
+  return null;
+}
+
+function validateEmailMessageEntries(entries: EmailMessageZipEntry[]): string | null {
+  for (const entry of entries) {
+    for (const record of entry.records) {
+      const row = toEmailMessageRow(record);
+      if (!row.contentsCode.trim()) {
+        return `"${entry.path}" has an Email Message with no Code set — every message needs a Code before export.`;
+      }
+    }
+  }
+  return null;
+}
+
+function validateSequenceEntries(entries: SequenceZipEntry[]): string | null {
+  for (const entry of entries) {
+    for (const record of entry.records) {
+      const row = toSequenceRow(record);
+      if (!row.name.trim()) {
+        return `"${entry.path}" has a Sequence with no Name set — every sequence needs a Name before export.`;
+      }
+      for (const intervalNode of getSequenceIntervalNodes(record)) {
+        const intervalRow = toSequenceIntervalRow(intervalNode);
+        if (!intervalRow.intervalName.trim()) {
+          return `"${entry.path}" — "${row.name}" has an interval with no Interval Name set — every interval needs one before export.`;
+        }
+      }
+    }
+  }
+  return null;
+}
+
 function withZipExtension(name: string): string {
   const trimmed = name.trim();
   if (!trimmed) return "export.zip";
@@ -357,6 +484,28 @@ const INSP_RELATE_INSP_COLUMNS: FlatGridColumnMeta[] = [
   { field: "initDateType", headerName: "Init Date Type", editable: true },
   { field: "initStatus", headerName: "Init Status", editable: true },
   { field: "servProvCode", headerName: "Agency ID", editable: true, hide: true },
+];
+
+const REFERENCE_MASK_COLUMNS: FlatGridColumnMeta[] = [
+  { field: "refId", headerName: "Ref ID", editable: false, hide: true },
+  { field: "name", headerName: "Name", editable: true },
+  { field: "type", headerName: "Type", editable: true },
+  { field: "description", headerName: "Description", editable: true },
+  { field: "pattern", headerName: "Pattern", editable: true },
+  { field: "maxLength", headerName: "Max Length", editable: true, hide: true },
+  { field: "minLength", headerName: "Min Length", editable: true, hide: true },
+  { field: "radixValue", headerName: "Radix", editable: true, hide: true },
+  { field: "seqName", headerName: "Sequence Name", editable: true, hide: true },
+  { field: "serviceProviderCode", headerName: "Agency ID", editable: true, hide: true },
+];
+
+const EMAIL_MESSAGE_COLUMNS: FlatGridColumnMeta[] = [
+  { field: "refId", headerName: "Ref ID", editable: false, hide: true },
+  { field: "contentsCode", headerName: "Code", editable: true },
+  { field: "contentsSubject", headerName: "Subject", editable: true },
+  { field: "contentsType", headerName: "Type", editable: true },
+  { field: "contentsBody", headerName: "Body", editable: true },
+  { field: "serviceProviderCode", headerName: "Agency ID", editable: true, hide: true },
 ];
 
 export default function Home() {
@@ -512,7 +661,13 @@ export default function Home() {
                 ? makeBlankInspRelateInspEntry()
                 : category === "refAddressTypeGroup"
                   ? makeBlankRefAddressTypeGroupEntry()
-                  : null;
+                  : category === "referenceMask"
+                    ? makeBlankReferenceMaskEntry()
+                    : category === "emailMessage"
+                      ? makeBlankEmailMessageEntry()
+                      : category === "sequence"
+                        ? makeBlankSequenceEntry()
+                        : null;
       if (!blankEntry) return;
       if (
         zipResult &&
@@ -560,6 +715,15 @@ export default function Home() {
   const refAddressTypeGroupEntries = editableEntries.filter(
     (en): en is RefAddressTypeGroupZipEntry => en.kind === "refAddressTypeGroup"
   );
+  const referenceMaskEntries = editableEntries.filter(
+    (en): en is ReferenceMaskZipEntry => en.kind === "referenceMask"
+  );
+  const emailMessageEntries = editableEntries.filter(
+    (en): en is EmailMessageZipEntry => en.kind === "emailMessage"
+  );
+  const sequenceEntries = editableEntries.filter(
+    (en): en is SequenceZipEntry => en.kind === "sequence"
+  );
 
   const sensitiveMatches = zipResult
     ? detectSensitiveEntries(zipResult.entries.map((en) => en.path))
@@ -585,7 +749,10 @@ export default function Home() {
       validateSharedDropDownEntries(sharedDropDownEntries) ??
       validateOrganizationAgencyEntries(organizationAgencyEntries) ??
       validateInspRelateInspEntries(inspRelateInspEntries) ??
-      validateRefAddressTypeGroupEntries(refAddressTypeGroupEntries);
+      validateRefAddressTypeGroupEntries(refAddressTypeGroupEntries) ??
+      validateReferenceMaskEntries(referenceMaskEntries) ??
+      validateEmailMessageEntries(emailMessageEntries) ??
+      validateSequenceEntries(sequenceEntries);
     if (validationError) {
       setError(validationError);
       return;
@@ -635,6 +802,9 @@ export default function Home() {
     organizationAgencyEntries,
     inspRelateInspEntries,
     refAddressTypeGroupEntries,
+    referenceMaskEntries,
+    emailMessageEntries,
+    sequenceEntries,
   ]);
 
   // Cascading on every keystroke would be wasteful (it touches every
@@ -899,7 +1069,7 @@ export default function Home() {
               toolbarLabel="Organization/Agency"
               addButtonLabel="+ Add Agency"
             />
-          ) : (
+          ) : activeEntry.kind === "inspRelateInsp" ? (
             <FlatGrid
               key={activeEntry.path}
               ref={gridRef}
@@ -917,6 +1087,53 @@ export default function Home() {
               deleteNode={deleteInspRelateInsp}
               toolbarLabel="Insp Relate Insp"
               addButtonLabel="+ Add Rule"
+            />
+          ) : activeEntry.kind === "referenceMask" ? (
+            <FlatGrid
+              key={activeEntry.path}
+              ref={gridRef}
+              records={activeEntry.records}
+              onChange={handleDataChange}
+              gridThemeClass={gridThemeClass}
+              agencyId={agencyId}
+              columnMeta={REFERENCE_MASK_COLUMNS}
+              toRow={toReferenceMaskRow}
+              setField={setReferenceMaskField}
+              agencyIdField="serviceProviderCode"
+              createNode={createReferenceMaskNode}
+              nextRefIdNumber={nextRefIdNumberReferenceMask}
+              findByUid={findReferenceMaskByUid}
+              deleteNode={deleteReferenceMask}
+              toolbarLabel="Reference Mask"
+              addButtonLabel="+ Add Mask"
+            />
+          ) : activeEntry.kind === "emailMessage" ? (
+            <FlatGrid
+              key={activeEntry.path}
+              ref={gridRef}
+              records={activeEntry.records}
+              onChange={handleDataChange}
+              gridThemeClass={gridThemeClass}
+              agencyId={agencyId}
+              columnMeta={EMAIL_MESSAGE_COLUMNS}
+              toRow={toEmailMessageRow}
+              setField={setEmailMessageField}
+              agencyIdField="serviceProviderCode"
+              createNode={createEmailMessageNode}
+              nextRefIdNumber={nextRefIdNumberEmailMessage}
+              findByUid={findEmailMessageByUid}
+              deleteNode={deleteEmailMessage}
+              toolbarLabel="Email Message"
+              addButtonLabel="+ Add Message"
+            />
+          ) : (
+            <SequenceGrid
+              key={activeEntry.path}
+              ref={gridRef}
+              records={activeEntry.records}
+              onChange={handleDataChange}
+              gridThemeClass={gridThemeClass}
+              agencyId={agencyId}
             />
           )
         ) : (

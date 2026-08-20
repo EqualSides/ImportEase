@@ -35,6 +35,27 @@ export interface RefAddressTypeGroupZipEntry {
   records: PNode[];
 }
 
+export interface ReferenceMaskZipEntry {
+  path: string;
+  kind: "referenceMask";
+  listAttrs: ListAttrs;
+  records: PNode[];
+}
+
+export interface EmailMessageZipEntry {
+  path: string;
+  kind: "emailMessage";
+  listAttrs: ListAttrs;
+  records: PNode[];
+}
+
+export interface SequenceZipEntry {
+  path: string;
+  kind: "sequence";
+  listAttrs: ListAttrs;
+  records: PNode[];
+}
+
 export interface PassthroughZipEntry {
   path: string;
   kind: "passthrough";
@@ -51,6 +72,9 @@ export type ZipEntryData =
   | OrganizationAgencyZipEntry
   | InspRelateInspZipEntry
   | RefAddressTypeGroupZipEntry
+  | ReferenceMaskZipEntry
+  | EmailMessageZipEntry
+  | SequenceZipEntry
   | PassthroughZipEntry;
 
 export interface ParseZipResult {

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<list  version="9.0.0" minorVersion="26" exportUser="DSAMPSON" exportDateTime="08/19/2026 09:22 AM" description="null"><snoteContents><contentsCode>BD_EM_IMP</contentsCode><serviceProviderCode>CLARKCO</serviceProviderCode><contentsBody>A permit for an implosion has been submitted to plans examination. </contentsBody><contentsSubject>Implosion Permit Required for $$CAPID$$</contentsSubject><contentsType>IMPLOSION</contentsType><recDate>2016-03-16T11:59:07.667-05:00</recDate><recFulNam>BPL</recFulNam><recStatus>A</recStatus><refEmailMessageI18NModels/></snoteContents>
+<snoteContents><contentsCode>PW_PAC</contentsCode><serviceProviderCode>CLARKCO</serviceProviderCode><contentsBody>The Plan Review has been updated for permit $PERMITID$.  You can view the details online. </contentsBody><contentsSubject>PAC Updated on $PERMITID$</contentsSubject><contentsType>REVIEW PLAN PAC UPDATED</contentsType><recDate>2020-05-01T13:32:37.287-05:00</recDate><recFulNam>ESTEP</recFulNam><recStatus>A</recStatus><refEmailMessageI18NModels/></snoteContents>
+<snoteContents><contentsCode>PMT_EXPIRED</contentsCode><serviceProviderCode>CLARKCO</serviceProviderCode><contentsBody>Your permit $PERMITID$ has Expired.  Please contact us for information on how to proceed. &#xD;
+&#xD;
+Comment:  $TASKCOMMENTS$&#xD;
+Address:  $PERMITADDR$&#xD;
+Description:  $PERMITWRKDESC$&#xD;
+</contentsBody><contentsSubject>Your permit $PERMITID$ has expired</contentsSubject><contentsType>PMT_EXPIRED</contentsType><recDate>2014-05-27T14:35:38-05:00</recDate><recFulNam>ADMIN</recFulNam><recStatus>A</recStatus><refEmailMessageI18NModels/></snoteContents>
+</list>
