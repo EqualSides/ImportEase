@@ -112,6 +112,13 @@ export interface GuideSheetZipEntry {
   records: PNode[];
 }
 
+export interface RAPOTemplateZipEntry {
+  path: string;
+  kind: "rapoTemplate";
+  listAttrs: ListAttrs;
+  records: PNode[];
+}
+
 export interface PassthroughZipEntry {
   path: string;
   kind: "passthrough";
@@ -139,6 +146,7 @@ export type ZipEntryData =
   | RefInspectionResultGroupZipEntry
   | RefLookupTableZipEntry
   | GuideSheetZipEntry
+  | RAPOTemplateZipEntry
   | PassthroughZipEntry;
 
 export interface ParseZipResult {

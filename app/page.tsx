@@ -12,6 +12,7 @@ import TimeGroupGrid from "@/components/TimeGroupGrid";
 import RefInspectionResultGroupGrid from "@/components/RefInspectionResultGroupGrid";
 import RefLookupTableGrid from "@/components/RefLookupTableGrid";
 import GuideSheetGrid from "@/components/GuideSheetGrid";
+import RAPOTemplateGrid from "@/components/RAPOTemplateGrid";
 import FlatGrid, { type FlatGridColumnMeta } from "@/components/FlatGrid";
 import {
   getStandardChoiceValueNodes,
@@ -128,6 +129,12 @@ import {
   toGuideSheetItemStatusGroupRow,
   toGuideSheetRow,
 } from "@/lib/xml/guideSheet";
+import {
+  getApoTemplateAttributeNodes,
+  inferCommonAgencyId as inferCommonAgencyIdRAPOTemplate,
+  toApoTemplateAttributeRow,
+  toRAPOTemplateRow,
+} from "@/lib/xml/rapoTemplate";
 import { detectSensitiveEntries } from "@/lib/sensitiveFiles";
 import { exportZipInWorker, parseZipInWorker } from "@/lib/worker/client";
 import type {
@@ -139,6 +146,7 @@ import type {
   InspRelateInspZipEntry,
   OrganizationAgencyZipEntry,
   ParseZipResult,
+  RAPOTemplateZipEntry,
   RefAddressTypeGroupZipEntry,
   RefInspectionResultGroupZipEntry,
   RefLookupTableZipEntry,
@@ -174,7 +182,8 @@ type EditableZipEntry =
   | TimeTypesZipEntry
   | RefInspectionResultGroupZipEntry
   | RefLookupTableZipEntry
-  | GuideSheetZipEntry;
+  | GuideSheetZipEntry
+  | RAPOTemplateZipEntry;
 
 function isEditableEntry(entry: ZipEntryData): entry is EditableZipEntry {
   return (
@@ -193,7 +202,8 @@ function isEditableEntry(entry: ZipEntryData): entry is EditableZipEntry {
     entry.kind === "timeTypes" ||
     entry.kind === "refInspectionResultGroup" ||
     entry.kind === "refLookupTable" ||
-    entry.kind === "guideSheet"
+    entry.kind === "guideSheet" ||
+    entry.kind === "rapoTemplate"
   );
 }
 
@@ -237,6 +247,8 @@ function inferAgencyIdForEntry(entry: EditableZipEntry): string {
       return inferCommonAgencyIdRefLookupTable(entry.records.map(toRefLookupTableRow));
     case "guideSheet":
       return inferCommonAgencyIdGuideSheet(entry.records.map(toGuideSheetRow));
+    case "rapoTemplate":
+      return inferCommonAgencyIdRAPOTemplate(entry.records.map(toRAPOTemplateRow));
   }
 }
 
@@ -255,7 +267,7 @@ const CATEGORY_OPTIONS: { value: string; label: string; available: boolean }[] =
   { value: "organizationAgency", label: "Organization/Agency", available: true },
   { value: "inspRelateInsp", label: "Insp Relate Insp", available: true },
   { value: "conditions", label: "Conditions", available: false },
-  { value: "rapoTemplate", label: "RAPO Template", available: false },
+  { value: "rapoTemplate", label: "RAPO Template", available: true },
   { value: "timeGroup", label: "Time Group", available: true },
   { value: "timeTypes", label: "Time Types", available: true },
   { value: "checklistGroup", label: "Checklist Group", available: true },
@@ -608,6 +620,21 @@ function makeBlankGuideSheetEntry(): GuideSheetZipEntry {
   };
 }
 
+function makeBlankRAPOTemplateEntry(): RAPOTemplateZipEntry {
+  return {
+    path: "RAPOTemplateModel.xml",
+    kind: "rapoTemplate",
+    listAttrs: {
+      version: "9.0.0",
+      minorVersion: "26",
+      exportUser: "",
+      exportDateTime: "",
+      description: "null",
+    },
+    records: [],
+  };
+}
+
 function validateReferenceMaskEntries(entries: ReferenceMaskZipEntry[]): string | null {
   for (const entry of entries) {
     for (const record of entry.records) {
@@ -791,6 +818,24 @@ function validateGuideSheetEntries(entries: GuideSheetZipEntry[]): string | null
           if (!sgRow.ststus.trim()) {
             return `"${entry.path}" — "${row.guideType}" / "${itemRow.guideItemText}" has a status group with no Status set — every status group needs one before export.`;
           }
+        }
+      }
+    }
+  }
+  return null;
+}
+
+function validateRAPOTemplateEntries(entries: RAPOTemplateZipEntry[]): string | null {
+  for (const entry of entries) {
+    for (const record of entry.records) {
+      const row = toRAPOTemplateRow(record);
+      if (!row.templateName.trim()) {
+        return `"${entry.path}" has a RAPO Template with no Template Name set — every template needs a Template Name before export.`;
+      }
+      for (const attrNode of getApoTemplateAttributeNodes(record)) {
+        const attrRow = toApoTemplateAttributeRow(attrNode);
+        if (!attrRow.attributeName.trim()) {
+          return `"${entry.path}" — "${row.templateName}" has an attribute with no Attribute Name set — every attribute needs one before export.`;
         }
       }
     }
@@ -1072,7 +1117,9 @@ export default function Home() {
                                       ? makeBlankRefLookupTableEntry()
                                       : category === "guideSheet"
                                         ? makeBlankGuideSheetEntry()
-                                        : null;
+                                        : category === "rapoTemplate"
+                                          ? makeBlankRAPOTemplateEntry()
+                                          : null;
       if (!blankEntry) return;
       if (
         zipResult &&
@@ -1153,6 +1200,9 @@ export default function Home() {
   const guideSheetEntries = editableEntries.filter(
     (en): en is GuideSheetZipEntry => en.kind === "guideSheet"
   );
+  const rapoTemplateEntries = editableEntries.filter(
+    (en): en is RAPOTemplateZipEntry => en.kind === "rapoTemplate"
+  );
 
   const sensitiveMatches = zipResult
     ? detectSensitiveEntries(zipResult.entries.map((en) => en.path))
@@ -1189,7 +1239,8 @@ export default function Home() {
       validateTimeTypesEntries(timeTypesEntries) ??
       validateRefInspectionResultGroupEntries(refInspectionResultGroupEntries) ??
       validateRefLookupTableEntries(refLookupTableEntries) ??
-      validateGuideSheetEntries(guideSheetEntries);
+      validateGuideSheetEntries(guideSheetEntries) ??
+      validateRAPOTemplateEntries(rapoTemplateEntries);
     if (validationError) {
       setError(validationError);
       return;
@@ -1250,6 +1301,7 @@ export default function Home() {
     refInspectionResultGroupEntries,
     refLookupTableEntries,
     guideSheetEntries,
+    rapoTemplateEntries,
   ]);
 
   // Cascading on every keystroke would be wasteful (it touches every
@@ -1653,8 +1705,17 @@ export default function Home() {
               gridThemeClass={gridThemeClass}
               agencyId={agencyId}
             />
-          ) : (
+          ) : activeEntry.kind === "guideSheet" ? (
             <GuideSheetGrid
+              key={activeEntry.path}
+              ref={gridRef}
+              records={activeEntry.records}
+              onChange={handleDataChange}
+              gridThemeClass={gridThemeClass}
+              agencyId={agencyId}
+            />
+          ) : (
+            <RAPOTemplateGrid
               key={activeEntry.path}
               ref={gridRef}
               records={activeEntry.records}

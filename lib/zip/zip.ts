@@ -63,6 +63,11 @@ import {
   parseRefLookupTableXml,
 } from "../xml/refLookupTable";
 import { buildExportedGuideSheetXml, isGuideSheetXml, parseGuideSheetXml } from "../xml/guideSheet";
+import {
+  buildExportedRAPOTemplateXml,
+  isRAPOTemplateXml,
+  parseRAPOTemplateXml,
+} from "../xml/rapoTemplate";
 import type { ParseZipResult, ZipEntryData } from "../types";
 
 /**
@@ -105,6 +110,7 @@ const DETECTORS: {
   },
   { kind: "refLookupTable", sniff: isRefLookupTableXml, parse: parseRefLookupTableXml },
   { kind: "guideSheet", sniff: isGuideSheetXml, parse: parseGuideSheetXml },
+  { kind: "rapoTemplate", sniff: isRAPOTemplateXml, parse: parseRAPOTemplateXml },
 ];
 
 export async function parseUploadedZip(
@@ -237,6 +243,11 @@ export async function buildExportZip(entries: ZipEntryData[]): Promise<Uint8Arra
       zip.file(
         entry.path,
         buildExportedGuideSheetXml({ listAttrs: entry.listAttrs, records: entry.records })
+      );
+    } else if (entry.kind === "rapoTemplate") {
+      zip.file(
+        entry.path,
+        buildExportedRAPOTemplateXml({ listAttrs: entry.listAttrs, records: entry.records })
       );
     } else {
       zip.file(entry.path, entry.bytes);
