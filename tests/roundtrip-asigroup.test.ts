@@ -98,9 +98,14 @@ describe("ASIGroupModel round-trip fidelity", () => {
     expect(exportedXml).toContain("<sharedDropDownModels/>");
   });
 
-  it("has no refId attribute anywhere in the real sample", () => {
+  it("has no refId attribute on the group/field/dropdown-value levels this module edits", () => {
+    // The untouched sharedDropDownModels sibling arm does carry refId
+    // (e.g. refId="1@SharedDropDownModel") in the real sample — this only
+    // asserts absence on the three levels this module actually reads/writes.
     const original = readFileSync(join(fixturesDir, file), "utf-8");
-    expect(original).not.toContain("refId=");
+    expect(original).not.toContain("<asiGroup refId");
+    expect(original).not.toContain("<asiModel refId");
+    expect(original).not.toContain("<asiDropdownModel refId");
   });
 
   it("reads FP_OCC_MAST's one field and LIC_IND's field with its one dropdown value", () => {
