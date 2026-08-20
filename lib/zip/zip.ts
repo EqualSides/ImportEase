@@ -57,6 +57,11 @@ import {
   isRefInspectionResultGroupXml,
   parseRefInspectionResultGroupXml,
 } from "../xml/refInspectionResultGroup";
+import {
+  buildExportedRefLookupTableXml,
+  isRefLookupTableXml,
+  parseRefLookupTableXml,
+} from "../xml/refLookupTable";
 import type { ParseZipResult, ZipEntryData } from "../types";
 
 /**
@@ -97,6 +102,7 @@ const DETECTORS: {
     sniff: isRefInspectionResultGroupXml,
     parse: parseRefInspectionResultGroupXml,
   },
+  { kind: "refLookupTable", sniff: isRefLookupTableXml, parse: parseRefLookupTableXml },
 ];
 
 export async function parseUploadedZip(
@@ -219,6 +225,11 @@ export async function buildExportZip(entries: ZipEntryData[]): Promise<Uint8Arra
           listAttrs: entry.listAttrs,
           records: entry.records,
         })
+      );
+    } else if (entry.kind === "refLookupTable") {
+      zip.file(
+        entry.path,
+        buildExportedRefLookupTableXml({ listAttrs: entry.listAttrs, records: entry.records })
       );
     } else {
       zip.file(entry.path, entry.bytes);

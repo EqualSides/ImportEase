@@ -10,6 +10,7 @@ import ApplicationStatusGroupGrid from "@/components/ApplicationStatusGroupGrid"
 import CommentGroupGrid from "@/components/CommentGroupGrid";
 import TimeGroupGrid from "@/components/TimeGroupGrid";
 import RefInspectionResultGroupGrid from "@/components/RefInspectionResultGroupGrid";
+import RefLookupTableGrid from "@/components/RefLookupTableGrid";
 import FlatGrid, { type FlatGridColumnMeta } from "@/components/FlatGrid";
 import {
   getStandardChoiceValueNodes,
@@ -110,6 +111,14 @@ import {
   toInspectionResultGroupModelRow,
   toRefInspectionResultGroupRow,
 } from "@/lib/xml/refInspectionResultGroup";
+import {
+  getLookupTableColumnNodes,
+  getLookupTableValueNodes,
+  inferCommonAgencyId as inferCommonAgencyIdRefLookupTable,
+  toLookupTableColumnRow,
+  toLookupTableValueRow,
+  toRefLookupTableRow,
+} from "@/lib/xml/refLookupTable";
 import { detectSensitiveEntries } from "@/lib/sensitiveFiles";
 import { exportZipInWorker, parseZipInWorker } from "@/lib/worker/client";
 import type {
@@ -122,6 +131,7 @@ import type {
   ParseZipResult,
   RefAddressTypeGroupZipEntry,
   RefInspectionResultGroupZipEntry,
+  RefLookupTableZipEntry,
   ReferenceMaskZipEntry,
   SequenceZipEntry,
   SharedDropDownZipEntry,
@@ -152,7 +162,8 @@ type EditableZipEntry =
   | CommentGroupZipEntry
   | TimeGroupZipEntry
   | TimeTypesZipEntry
-  | RefInspectionResultGroupZipEntry;
+  | RefInspectionResultGroupZipEntry
+  | RefLookupTableZipEntry;
 
 function isEditableEntry(entry: ZipEntryData): entry is EditableZipEntry {
   return (
@@ -169,7 +180,8 @@ function isEditableEntry(entry: ZipEntryData): entry is EditableZipEntry {
     entry.kind === "commentGroup" ||
     entry.kind === "timeGroup" ||
     entry.kind === "timeTypes" ||
-    entry.kind === "refInspectionResultGroup"
+    entry.kind === "refInspectionResultGroup" ||
+    entry.kind === "refLookupTable"
   );
 }
 
@@ -209,6 +221,8 @@ function inferAgencyIdForEntry(entry: EditableZipEntry): string {
       return inferCommonAgencyIdRefInspectionResultGroup(
         entry.records.map(toRefInspectionResultGroupRow)
       );
+    case "refLookupTable":
+      return inferCommonAgencyIdRefLookupTable(entry.records.map(toRefLookupTableRow));
   }
 }
 
@@ -232,7 +246,7 @@ const CATEGORY_OPTIONS: { value: string; label: string; available: boolean }[] =
   { value: "timeTypes", label: "Time Types", available: true },
   { value: "checklistGroup", label: "Checklist Group", available: true },
   { value: "referenceMask", label: "Reference Mask", available: true },
-  { value: "refLookupTable", label: "Ref Lookup Table", available: false },
+  { value: "refLookupTable", label: "Ref Lookup Table", available: true },
   { value: "emailMessage", label: "Email Message", available: true },
   { value: "userProfiles", label: "User Profiles", available: false },
   { value: "standardCommentGroup", label: "Standard Comment Group", available: false },
@@ -550,6 +564,21 @@ function makeBlankRefInspectionResultGroupEntry(): RefInspectionResultGroupZipEn
   };
 }
 
+function makeBlankRefLookupTableEntry(): RefLookupTableZipEntry {
+  return {
+    path: "RefLookupTableModel.xml",
+    kind: "refLookupTable",
+    listAttrs: {
+      version: "9.0.0",
+      minorVersion: "26",
+      exportUser: "",
+      exportDateTime: "",
+      description: "null",
+    },
+    records: [],
+  };
+}
+
 function validateReferenceMaskEntries(entries: ReferenceMaskZipEntry[]): string | null {
   for (const entry of entries) {
     for (const record of entry.records) {
@@ -685,6 +714,30 @@ function validateRefInspectionResultGroupEntries(
         const resultRow = toInspectionResultGroupModelRow(resultNode);
         if (!resultRow.inspResult.trim()) {
           return `"${entry.path}" — "${row.inspResultGroup}" has a result with no Result set — every result needs one before export.`;
+        }
+      }
+    }
+  }
+  return null;
+}
+
+function validateRefLookupTableEntries(entries: RefLookupTableZipEntry[]): string | null {
+  for (const entry of entries) {
+    for (const record of entry.records) {
+      const row = toRefLookupTableRow(record);
+      if (!row.lookupTableName.trim()) {
+        return `"${entry.path}" has a Lookup Table with no Table Name set — every table needs a Table Name before export.`;
+      }
+      for (const colNode of getLookupTableColumnNodes(record)) {
+        const colRow = toLookupTableColumnRow(colNode);
+        if (!colRow.lookupColumnName.trim()) {
+          return `"${entry.path}" — "${row.lookupTableName}" has a column with no Column Name set — every column needs one before export.`;
+        }
+        for (const valNode of getLookupTableValueNodes(colNode)) {
+          const valRow = toLookupTableValueRow(valNode);
+          if (!valRow.lookupColumnValue.trim()) {
+            return `"${entry.path}" — "${row.lookupTableName}" / "${colRow.lookupColumnName}" has a value with no Value set — every value needs one before export.`;
+          }
         }
       }
     }
@@ -962,7 +1015,9 @@ export default function Home() {
                                   ? makeBlankTimeTypesEntry()
                                   : category === "refInspectionResultGroup"
                                     ? makeBlankRefInspectionResultGroupEntry()
-                                    : null;
+                                    : category === "refLookupTable"
+                                      ? makeBlankRefLookupTableEntry()
+                                      : null;
       if (!blankEntry) return;
       if (
         zipResult &&
@@ -1037,6 +1092,9 @@ export default function Home() {
   const refInspectionResultGroupEntries = editableEntries.filter(
     (en): en is RefInspectionResultGroupZipEntry => en.kind === "refInspectionResultGroup"
   );
+  const refLookupTableEntries = editableEntries.filter(
+    (en): en is RefLookupTableZipEntry => en.kind === "refLookupTable"
+  );
 
   const sensitiveMatches = zipResult
     ? detectSensitiveEntries(zipResult.entries.map((en) => en.path))
@@ -1071,7 +1129,8 @@ export default function Home() {
       validateCommentGroupEntries(commentGroupEntries) ??
       validateTimeGroupEntries(timeGroupEntries) ??
       validateTimeTypesEntries(timeTypesEntries) ??
-      validateRefInspectionResultGroupEntries(refInspectionResultGroupEntries);
+      validateRefInspectionResultGroupEntries(refInspectionResultGroupEntries) ??
+      validateRefLookupTableEntries(refLookupTableEntries);
     if (validationError) {
       setError(validationError);
       return;
@@ -1130,6 +1189,7 @@ export default function Home() {
     timeGroupEntries,
     timeTypesEntries,
     refInspectionResultGroupEntries,
+    refLookupTableEntries,
   ]);
 
   // Cascading on every keystroke would be wasteful (it touches every
@@ -1515,8 +1575,17 @@ export default function Home() {
               toolbarLabel="Time Types"
               addButtonLabel="+ Add Time Type"
             />
-          ) : (
+          ) : activeEntry.kind === "refInspectionResultGroup" ? (
             <RefInspectionResultGroupGrid
+              key={activeEntry.path}
+              ref={gridRef}
+              records={activeEntry.records}
+              onChange={handleDataChange}
+              gridThemeClass={gridThemeClass}
+              agencyId={agencyId}
+            />
+          ) : (
+            <RefLookupTableGrid
               key={activeEntry.path}
               ref={gridRef}
               records={activeEntry.records}

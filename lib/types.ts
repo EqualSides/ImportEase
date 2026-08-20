@@ -98,6 +98,13 @@ export interface RefInspectionResultGroupZipEntry {
   records: PNode[];
 }
 
+export interface RefLookupTableZipEntry {
+  path: string;
+  kind: "refLookupTable";
+  listAttrs: ListAttrs;
+  records: PNode[];
+}
+
 export interface PassthroughZipEntry {
   path: string;
   kind: "passthrough";
@@ -123,6 +130,7 @@ export type ZipEntryData =
   | TimeTypesZipEntry
   | TimeGroupZipEntry
   | RefInspectionResultGroupZipEntry
+  | RefLookupTableZipEntry
   | PassthroughZipEntry;
 
 export interface ParseZipResult {
