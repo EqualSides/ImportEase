@@ -90,6 +90,17 @@ interface AccountRow {
   email: string;
   created_at: string;
   last_sign_in_at: string | null;
+  expires_at: string | null;
+}
+
+function expiryLabel(expiresAt: string | null): { text: string; className: string } {
+  if (!expiresAt) return { text: "No expiration (test account)", className: "" };
+  const date = new Date(expiresAt);
+  const daysLeft = (date.getTime() - Date.now()) / 86_400_000;
+  const text = `${daysLeft < 0 ? "Expired" : "Expires"} ${date.toLocaleDateString()}`;
+  if (daysLeft < 0) return { text, className: "expiry-expired" };
+  if (daysLeft < 30) return { text, className: "expiry-soon" };
+  return { text, className: "" };
 }
 
 function AccountsTab() {
@@ -119,36 +130,66 @@ function AccountsTab() {
   return (
     <div className="admin-request-list">
       {accounts.map((a) => (
-        <AccountRowItem key={a.id} account={a} />
+        <AccountRowItem key={a.id} account={a} onChanged={load} />
       ))}
     </div>
   );
 }
 
-function AccountRowItem({ account }: { account: AccountRow }) {
+function AccountRowItem({ account, onChanged }: { account: AccountRow; onChanged: () => void }) {
   const username = account.email.split("@")[0];
   const [newPassword, setNewPassword] = useState("");
-  const [submitting, setSubmitting] = useState(false);
+  const [submitting, setSubmitting] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+  const expiry = expiryLabel(account.expires_at);
 
   const resetPassword = async () => {
     if (newPassword.length < 4) {
       setError("New password must be at least 4 characters.");
       return;
     }
-    setSubmitting(true);
+    setSubmitting("reset");
     setError(null);
     const { data, error: fnError } = await supabase.functions.invoke("admin-create-account", {
       body: { username, password: newPassword, action: "reset" },
     });
-    setSubmitting(false);
+    setSubmitting(null);
     if (fnError || data?.error) {
       setError(data?.error || fnError?.message || "Something went wrong.");
       return;
     }
     setDone(true);
     setNewPassword("");
+  };
+
+  const renew = async (period: "half" | "year") => {
+    setSubmitting(period);
+    setError(null);
+    const { data, error: fnError } = await supabase.functions.invoke("admin-create-account", {
+      body: { username, action: "renew", period },
+    });
+    setSubmitting(null);
+    if (fnError || data?.error) {
+      setError(data?.error || fnError?.message || "Something went wrong.");
+      return;
+    }
+    onChanged();
+  };
+
+  const forceExpire = async () => {
+    if (!confirm(`Force-expire "${username}" immediately?`)) return;
+    setSubmitting("forceExpire");
+    setError(null);
+    const { data, error: fnError } = await supabase.functions.invoke("admin-create-account", {
+      body: { username, action: "forceExpire" },
+    });
+    setSubmitting(null);
+    if (fnError || data?.error) {
+      setError(data?.error || fnError?.message || "Something went wrong.");
+      return;
+    }
+    onChanged();
   };
 
   return (
@@ -159,6 +200,18 @@ function AccountRowItem({ account }: { account: AccountRow }) {
           Created {new Date(account.created_at).toLocaleDateString()} &middot; Last sign-in{" "}
           {account.last_sign_in_at ? new Date(account.last_sign_in_at).toLocaleString() : "never"}
         </div>
+        <div className={`admin-request-meta ${expiry.className}`}>{expiry.text}</div>
+      </div>
+      <div className="admin-request-actions">
+        <button className="btn" disabled={!!submitting} onClick={() => renew("half")}>
+          {submitting === "half" ? "…" : "Renew +6mo"}
+        </button>
+        <button className="btn" disabled={!!submitting} onClick={() => renew("year")}>
+          {submitting === "year" ? "…" : "Renew +1yr"}
+        </button>
+        <button className="btn btn-danger" disabled={!!submitting} onClick={forceExpire}>
+          {submitting === "forceExpire" ? "…" : "Force Expire"}
+        </button>
       </div>
       <div className="admin-request-actions">
         <input
@@ -170,12 +223,12 @@ function AccountRowItem({ account }: { account: AccountRow }) {
             setDone(false);
           }}
         />
-        <button className="auth-submit" disabled={submitting} onClick={resetPassword}>
-          {submitting ? "Resetting…" : "Reset Password"}
+        <button className="auth-submit" disabled={!!submitting} onClick={resetPassword}>
+          {submitting === "reset" ? "Resetting…" : "Reset Password"}
         </button>
         {done && <span className="auth-form-success">Password updated.</span>}
-        {error && <div className="auth-form-error">{error}</div>}
       </div>
+      {error && <div className="auth-form-error">{error}</div>}
     </div>
   );
 }
@@ -196,6 +249,7 @@ function RequestRow({
       .slice(0, 24)
   );
   const [password, setPassword] = useState("");
+  const [expiryOption, setExpiryOption] = useState<"none" | "half" | "year">("half");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -209,7 +263,7 @@ function RequestRow({
     setSubmitting(true);
     setError(null);
     const { data, error: fnError } = await supabase.functions.invoke("admin-create-account", {
-      body: { username, password, requestId: request.id },
+      body: { username, password, requestId: request.id, expiryOption },
     });
     setSubmitting(false);
     if (fnError || data?.error) {
@@ -247,6 +301,11 @@ function RequestRow({
             value={password}
             onChange={(e) => setPassword(e.target.value)}
           />
+          <select value={expiryOption} onChange={(e) => setExpiryOption(e.target.value as typeof expiryOption)}>
+            <option value="half">Paid: this half</option>
+            <option value="year">Paid: full year</option>
+            <option value="none">No expiration (test)</option>
+          </select>
           <button className="auth-submit" disabled={submitting} onClick={createAccount}>
             {submitting ? "Creating…" : "Create Account"}
           </button>

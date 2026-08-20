@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import { supabase, usernameToEmail } from "@/lib/supabase/client";
+import { ADMIN_EMAIL, checkSubscriptionStatus, supabase, usernameToEmail } from "@/lib/supabase/client";
 
 interface AuthModalProps {
   onClose: () => void;
@@ -54,15 +54,27 @@ function SignInForm({ onSignedIn }: { onSignedIn: () => void }) {
     if (!username.trim() || !password) return;
     setSubmitting(true);
     setError(null);
-    const { error: signInError } = await supabase.auth.signInWithPassword({
+    const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
       email: usernameToEmail(username),
       password,
     });
-    setSubmitting(false);
     if (signInError) {
+      setSubmitting(false);
       setError("Incorrect username or password.");
       return;
     }
+
+    if (signInData.user?.email !== ADMIN_EMAIL) {
+      const status = await checkSubscriptionStatus(signInData.user!.id);
+      if (status === "expired") {
+        await supabase.auth.signOut();
+        setSubmitting(false);
+        setError("Your subscription has expired. Please contact us to renew.");
+        return;
+      }
+    }
+
+    setSubmitting(false);
     onSignedIn();
   };
 

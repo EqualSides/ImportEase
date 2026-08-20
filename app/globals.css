@@ -765,3 +765,23 @@ body.resizing-panels {
 .admin-request-actions .auth-form-error {
   flex-basis: 100%;
 }
+
+.admin-request-actions select {
+  font-family: var(--font-mono), monospace;
+  font-size: 12px;
+  background: var(--bg-base);
+  color: var(--text-primary);
+  border: 1px solid var(--border-hairline);
+  border-radius: 5px;
+  padding: 5px 7px;
+}
+
+.expiry-expired {
+  color: var(--accent-danger-text);
+  font-weight: 600;
+}
+
+.expiry-soon {
+  color: var(--accent-amber-text);
+  font-weight: 600;
+}

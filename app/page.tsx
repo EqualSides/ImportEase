@@ -24,7 +24,7 @@ import RefDocumentGrid from "@/components/RefDocumentGrid";
 import FlatGrid, { type FlatGridColumnMeta } from "@/components/FlatGrid";
 import AuthModal from "@/components/AuthModal";
 import AdminPanel from "@/components/AdminPanel";
-import { supabase, ADMIN_EMAIL } from "@/lib/supabase/client";
+import { supabase, ADMIN_EMAIL, checkSubscriptionStatus } from "@/lib/supabase/client";
 import type { Session } from "@supabase/supabase-js";
 import {
   createDepartmentTypeNode,
@@ -1573,6 +1573,7 @@ export default function Home() {
   const [authChecked, setAuthChecked] = useState(false);
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [adminPanelOpen, setAdminPanelOpen] = useState(false);
+  const [subscriptionExpired, setSubscriptionExpired] = useState(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -1586,6 +1587,23 @@ export default function Home() {
     });
     return () => subscription.unsubscribe();
   }, []);
+
+  // Safety net for sessions that were already active when the account
+  // expired (or an admin force-expires it mid-session) — the sign-in-time
+  // check in AuthModal only catches expiration at the moment of login.
+  useEffect(() => {
+    if (!session?.user || session.user.email === ADMIN_EMAIL) {
+      setSubscriptionExpired(false);
+      return;
+    }
+    let cancelled = false;
+    checkSubscriptionStatus(session.user.id).then((status) => {
+      if (!cancelled) setSubscriptionExpired(status === "expired");
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [session]);
 
   useEffect(() => {
     const stored = localStorage.getItem(THEME_STORAGE_KEY);
@@ -2070,7 +2088,7 @@ export default function Home() {
             accept=".zip"
             multiple
             onChange={handleFileChange}
-            disabled={loading || !session}
+            disabled={loading || !session || subscriptionExpired}
           />
         </label>
 
@@ -2119,7 +2137,7 @@ export default function Home() {
           value=""
           onChange={handleNewFile}
           aria-label="Start a new file"
-          disabled={!session}
+          disabled={!session || subscriptionExpired}
         >
           <option value="" disabled hidden>
             Start new file
@@ -2157,7 +2175,7 @@ export default function Home() {
         <button
           className="btn btn-primary"
           onClick={handleExport}
-          disabled={!zipResult || exporting || undecidedSensitive.length > 0 || !session}
+          disabled={!zipResult || exporting || undecidedSensitive.length > 0 || !session || subscriptionExpired}
         >
           {exporting ? "Building zip…" : "Export .zip"}
         </button>
@@ -2244,6 +2262,10 @@ export default function Home() {
             {authChecked
               ? "Sign in to use ImportEase — click “Login” above. No account? Use “Request Access”."
               : "Checking sign-in status…"}
+          </div>
+        ) : subscriptionExpired ? (
+          <div className="main-empty">
+            Your subscription has expired. Please contact us to renew access.
           </div>
         ) : activeEntry ? (
           activeEntry.kind === "standardChoice" ? (

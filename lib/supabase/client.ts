@@ -37,3 +37,21 @@ export interface AccessRequestRow {
   message: string | null;
   status: string;
 }
+
+export type SubscriptionStatus = "active" | "expired" | "unlimited";
+
+// Test/trial accounts (the ones provisioned before subscription
+// enforcement went live) have no row in `subscriptions` at all — those
+// stay "unlimited" (never blocked) until an admin explicitly renews or
+// force-expires them from the Accounts tab. The admin account itself is
+// always exempt regardless of any row, checked by the caller before
+// calling this.
+export async function checkSubscriptionStatus(userId: string): Promise<SubscriptionStatus> {
+  const { data } = await supabase
+    .from("subscriptions")
+    .select("expires_at")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (!data) return "unlimited";
+  return new Date(data.expires_at).getTime() > Date.now() ? "active" : "expired";
+}
