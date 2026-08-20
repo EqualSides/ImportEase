@@ -13,6 +13,7 @@ import RefInspectionResultGroupGrid from "@/components/RefInspectionResultGroupG
 import RefLookupTableGrid from "@/components/RefLookupTableGrid";
 import GuideSheetGrid from "@/components/GuideSheetGrid";
 import RAPOTemplateGrid from "@/components/RAPOTemplateGrid";
+import SmartChoiceGroupGrid from "@/components/SmartChoiceGroupGrid";
 import FlatGrid, { type FlatGridColumnMeta } from "@/components/FlatGrid";
 import {
   getStandardChoiceValueNodes,
@@ -135,6 +136,14 @@ import {
   toApoTemplateAttributeRow,
   toRAPOTemplateRow,
 } from "@/lib/xml/rapoTemplate";
+import {
+  getSmartChoiceNodes,
+  getSmartChoiceOptionNodes,
+  inferCommonAgencyId as inferCommonAgencyIdSmartChoiceGroup,
+  toSmartChoiceGroupRow,
+  toSmartChoiceRow,
+  toSmartChoiceOptionRow,
+} from "@/lib/xml/smartChoiceGroup";
 import { detectSensitiveEntries } from "@/lib/sensitiveFiles";
 import { exportZipInWorker, parseZipInWorker } from "@/lib/worker/client";
 import type {
@@ -153,6 +162,7 @@ import type {
   ReferenceMaskZipEntry,
   SequenceZipEntry,
   SharedDropDownZipEntry,
+  SmartChoiceGroupZipEntry,
   StandardChoiceZipEntry,
   TimeGroupZipEntry,
   TimeTypesZipEntry,
@@ -183,7 +193,8 @@ type EditableZipEntry =
   | RefInspectionResultGroupZipEntry
   | RefLookupTableZipEntry
   | GuideSheetZipEntry
-  | RAPOTemplateZipEntry;
+  | RAPOTemplateZipEntry
+  | SmartChoiceGroupZipEntry;
 
 function isEditableEntry(entry: ZipEntryData): entry is EditableZipEntry {
   return (
@@ -203,7 +214,8 @@ function isEditableEntry(entry: ZipEntryData): entry is EditableZipEntry {
     entry.kind === "refInspectionResultGroup" ||
     entry.kind === "refLookupTable" ||
     entry.kind === "guideSheet" ||
-    entry.kind === "rapoTemplate"
+    entry.kind === "rapoTemplate" ||
+    entry.kind === "smartChoiceGroup"
   );
 }
 
@@ -249,6 +261,8 @@ function inferAgencyIdForEntry(entry: EditableZipEntry): string {
       return inferCommonAgencyIdGuideSheet(entry.records.map(toGuideSheetRow));
     case "rapoTemplate":
       return inferCommonAgencyIdRAPOTemplate(entry.records.map(toRAPOTemplateRow));
+    case "smartChoiceGroup":
+      return inferCommonAgencyIdSmartChoiceGroup(entry.records.map(toSmartChoiceGroupRow));
   }
 }
 
@@ -286,7 +300,7 @@ const CATEGORY_OPTIONS: { value: string; label: string; available: boolean }[] =
   { value: "inspectionGroup", label: "Inspection Group", available: false },
   { value: "refDocument", label: "Ref Document", available: false },
   { value: "guideSheet", label: "Guide Sheet", available: true },
-  { value: "smartChoiceGroup", label: "Smart Choice Group", available: false },
+  { value: "smartChoiceGroup", label: "Smart Choice Group", available: true },
   { value: "virtualProcess", label: "Virtual Process", available: false },
   { value: "refFeeSchedule", label: "Ref Fee Schedule", available: false },
   { value: "capType", label: "Cap Type", available: false },
@@ -635,6 +649,21 @@ function makeBlankRAPOTemplateEntry(): RAPOTemplateZipEntry {
   };
 }
 
+function makeBlankSmartChoiceGroupEntry(): SmartChoiceGroupZipEntry {
+  return {
+    path: "SmartChoiceGroupModel.xml",
+    kind: "smartChoiceGroup",
+    listAttrs: {
+      version: "9.0.0",
+      minorVersion: "26",
+      exportUser: "",
+      exportDateTime: "",
+      description: "null",
+    },
+    records: [],
+  };
+}
+
 function validateReferenceMaskEntries(entries: ReferenceMaskZipEntry[]): string | null {
   for (const entry of entries) {
     for (const record of entry.records) {
@@ -836,6 +865,30 @@ function validateRAPOTemplateEntries(entries: RAPOTemplateZipEntry[]): string | 
         const attrRow = toApoTemplateAttributeRow(attrNode);
         if (!attrRow.attributeName.trim()) {
           return `"${entry.path}" — "${row.templateName}" has an attribute with no Attribute Name set — every attribute needs one before export.`;
+        }
+      }
+    }
+  }
+  return null;
+}
+
+function validateSmartChoiceGroupEntries(entries: SmartChoiceGroupZipEntry[]): string | null {
+  for (const entry of entries) {
+    for (const record of entry.records) {
+      const row = toSmartChoiceGroupRow(record);
+      if (!row.groupCode.trim()) {
+        return `"${entry.path}" has a Smart Choice Group with no Group Code set — every group needs a Group Code before export.`;
+      }
+      for (const choiceNode of getSmartChoiceNodes(record)) {
+        const choiceRow = toSmartChoiceRow(choiceNode);
+        if (!choiceRow.functionName.trim()) {
+          return `"${entry.path}" — "${row.groupCode}" has a smart choice with no Function Name set — every smart choice needs one before export.`;
+        }
+        for (const optNode of getSmartChoiceOptionNodes(choiceNode)) {
+          const optRow = toSmartChoiceOptionRow(optNode);
+          if (!optRow.functionOption.trim()) {
+            return `"${entry.path}" — "${row.groupCode}" / "${choiceRow.functionName}" has an option with no Function Option set — every option needs one before export.`;
+          }
         }
       }
     }
@@ -1119,7 +1172,9 @@ export default function Home() {
                                         ? makeBlankGuideSheetEntry()
                                         : category === "rapoTemplate"
                                           ? makeBlankRAPOTemplateEntry()
-                                          : null;
+                                          : category === "smartChoiceGroup"
+                                            ? makeBlankSmartChoiceGroupEntry()
+                                            : null;
       if (!blankEntry) return;
       if (
         zipResult &&
@@ -1203,6 +1258,9 @@ export default function Home() {
   const rapoTemplateEntries = editableEntries.filter(
     (en): en is RAPOTemplateZipEntry => en.kind === "rapoTemplate"
   );
+  const smartChoiceGroupEntries = editableEntries.filter(
+    (en): en is SmartChoiceGroupZipEntry => en.kind === "smartChoiceGroup"
+  );
 
   const sensitiveMatches = zipResult
     ? detectSensitiveEntries(zipResult.entries.map((en) => en.path))
@@ -1240,7 +1298,8 @@ export default function Home() {
       validateRefInspectionResultGroupEntries(refInspectionResultGroupEntries) ??
       validateRefLookupTableEntries(refLookupTableEntries) ??
       validateGuideSheetEntries(guideSheetEntries) ??
-      validateRAPOTemplateEntries(rapoTemplateEntries);
+      validateRAPOTemplateEntries(rapoTemplateEntries) ??
+      validateSmartChoiceGroupEntries(smartChoiceGroupEntries);
     if (validationError) {
       setError(validationError);
       return;
@@ -1302,6 +1361,7 @@ export default function Home() {
     refLookupTableEntries,
     guideSheetEntries,
     rapoTemplateEntries,
+    smartChoiceGroupEntries,
   ]);
 
   // Cascading on every keystroke would be wasteful (it touches every
@@ -1714,8 +1774,17 @@ export default function Home() {
               gridThemeClass={gridThemeClass}
               agencyId={agencyId}
             />
-          ) : (
+          ) : activeEntry.kind === "rapoTemplate" ? (
             <RAPOTemplateGrid
+              key={activeEntry.path}
+              ref={gridRef}
+              records={activeEntry.records}
+              onChange={handleDataChange}
+              gridThemeClass={gridThemeClass}
+              agencyId={agencyId}
+            />
+          ) : (
+            <SmartChoiceGroupGrid
               key={activeEntry.path}
               ref={gridRef}
               records={activeEntry.records}

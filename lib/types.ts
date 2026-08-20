@@ -119,6 +119,13 @@ export interface RAPOTemplateZipEntry {
   records: PNode[];
 }
 
+export interface SmartChoiceGroupZipEntry {
+  path: string;
+  kind: "smartChoiceGroup";
+  listAttrs: ListAttrs;
+  records: PNode[];
+}
+
 export interface PassthroughZipEntry {
   path: string;
   kind: "passthrough";
@@ -147,6 +154,7 @@ export type ZipEntryData =
   | RefLookupTableZipEntry
   | GuideSheetZipEntry
   | RAPOTemplateZipEntry
+  | SmartChoiceGroupZipEntry
   | PassthroughZipEntry;
 
 export interface ParseZipResult {

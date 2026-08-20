@@ -68,6 +68,11 @@ import {
   isRAPOTemplateXml,
   parseRAPOTemplateXml,
 } from "../xml/rapoTemplate";
+import {
+  buildExportedSmartChoiceGroupXml,
+  isSmartChoiceGroupXml,
+  parseSmartChoiceGroupXml,
+} from "../xml/smartChoiceGroup";
 import type { ParseZipResult, ZipEntryData } from "../types";
 
 /**
@@ -111,6 +116,7 @@ const DETECTORS: {
   { kind: "refLookupTable", sniff: isRefLookupTableXml, parse: parseRefLookupTableXml },
   { kind: "guideSheet", sniff: isGuideSheetXml, parse: parseGuideSheetXml },
   { kind: "rapoTemplate", sniff: isRAPOTemplateXml, parse: parseRAPOTemplateXml },
+  { kind: "smartChoiceGroup", sniff: isSmartChoiceGroupXml, parse: parseSmartChoiceGroupXml },
 ];
 
 export async function parseUploadedZip(
@@ -248,6 +254,11 @@ export async function buildExportZip(entries: ZipEntryData[]): Promise<Uint8Arra
       zip.file(
         entry.path,
         buildExportedRAPOTemplateXml({ listAttrs: entry.listAttrs, records: entry.records })
+      );
+    } else if (entry.kind === "smartChoiceGroup") {
+      zip.file(
+        entry.path,
+        buildExportedSmartChoiceGroupXml({ listAttrs: entry.listAttrs, records: entry.records })
       );
     } else {
       zip.file(entry.path, entry.bytes);
