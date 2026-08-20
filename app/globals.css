@@ -786,6 +786,29 @@ body.resizing-panels {
   font-weight: 600;
 }
 
+/* Subscription status pill (toolbar) -------------------------------------- */
+
+.subscription-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  font-family: var(--font-mono), monospace;
+  color: var(--text-muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.subscription-pill-soon {
+  color: var(--accent-amber-text);
+  font-weight: 600;
+}
+
+.subscription-pill a {
+  color: inherit;
+  text-decoration: underline;
+}
+
 /* Expression Builder code check ------------------------------------------ */
 
 .lint-modal {

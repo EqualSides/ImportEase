@@ -25,7 +25,7 @@ import RefDocumentGrid from "@/components/RefDocumentGrid";
 import FlatGrid, { type FlatGridColumnMeta } from "@/components/FlatGrid";
 import AuthModal from "@/components/AuthModal";
 import AdminPanel from "@/components/AdminPanel";
-import { supabase, ADMIN_EMAIL, checkSubscriptionStatus } from "@/lib/supabase/client";
+import { supabase, ADMIN_EMAIL, getSubscriptionDetails } from "@/lib/supabase/client";
 import type { Session } from "@supabase/supabase-js";
 import {
   createDepartmentTypeNode,
@@ -461,6 +461,20 @@ const CATEGORY_OPTIONS: { value: string; label: string }[] = [
   { value: "timeTypes", label: "Time Types" },
   { value: "virProcess", label: "Virtual Process" },
 ];
+
+// Lets a signed-in customer see their own subscription status without
+// emailing Daniel to ask — billing is external (PO/check), so this is
+// read-only; "Contact us to renew" is just a mailto, not a payment flow.
+function subscriptionPill(expiresAt: string): { text: string; title: string; soon: boolean } {
+  const date = new Date(expiresAt);
+  const daysLeft = (date.getTime() - Date.now()) / 86_400_000;
+  const formatted = date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  return {
+    text: `Expires ${formatted}`,
+    title: `Your subscription is active until ${date.toLocaleDateString()}.`,
+    soon: daysLeft < 30,
+  };
+}
 
 // Fields the schema doc (docs/schema-standard-choice.md) marks "always" —
 // required before export can proceed, same treatment as the required
@@ -1634,6 +1648,7 @@ export default function Home() {
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [adminPanelOpen, setAdminPanelOpen] = useState(false);
   const [accessBlockedReason, setAccessBlockedReason] = useState<"expired" | "pending" | null>(null);
+  const [subscriptionExpiresAt, setSubscriptionExpiresAt] = useState<string | null>(null);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -1655,12 +1670,17 @@ export default function Home() {
   useEffect(() => {
     if (!session?.user || session.user.email === ADMIN_EMAIL) {
       setAccessBlockedReason(null);
+      setSubscriptionExpiresAt(null);
       return;
     }
     let cancelled = false;
-    checkSubscriptionStatus(session.user.id).then((status) => {
+    getSubscriptionDetails(session.user.id).then(({ status, expiresAt }) => {
       if (cancelled) return;
       setAccessBlockedReason(status === "expired" ? "expired" : status === "pending" ? "pending" : null);
+      // "unlimited" (no subscriptions row — the original test accounts)
+      // has no real expiry to show; only surface a date for accounts
+      // that actually carry one.
+      setSubscriptionExpiresAt(status === "unlimited" ? null : expiresAt);
     });
     return () => {
       cancelled = true;
@@ -2257,6 +2277,25 @@ export default function Home() {
             Admin
           </button>
         )}
+        {session &&
+          !accessBlockedReason &&
+          subscriptionExpiresAt &&
+          (() => {
+            const pill = subscriptionPill(subscriptionExpiresAt);
+            return (
+              <span
+                className={pill.soon ? "subscription-pill subscription-pill-soon" : "subscription-pill"}
+                title={pill.title}
+              >
+                {pill.text}
+                {pill.soon && (
+                  <a href="mailto:sampsondanielr@gmail.com?subject=ImportEase%20renewal">
+                    Contact us to renew
+                  </a>
+                )}
+              </span>
+            );
+          })()}
         {session ? (
           <button
             className="btn"

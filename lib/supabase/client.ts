@@ -49,15 +49,28 @@ export type SubscriptionStatus = "active" | "expired" | "pending" | "unlimited";
 // which is also how access gets granted. The admin account itself is
 // always exempt regardless of any row, checked by the caller before
 // calling this.
-export async function checkSubscriptionStatus(userId: string): Promise<SubscriptionStatus> {
+export interface SubscriptionDetails {
+  status: SubscriptionStatus;
+  expiresAt: string | null;
+}
+
+// Same query checkSubscriptionStatus needs, but also hands back the raw
+// expiry date so the UI can show a signed-in customer their own "expires
+// on <date>" without them having to email Daniel to ask.
+export async function getSubscriptionDetails(userId: string): Promise<SubscriptionDetails> {
   const { data } = await supabase
     .from("subscriptions")
     .select("expires_at, approved")
     .eq("user_id", userId)
     .maybeSingle();
-  if (!data) return "unlimited";
-  if (!data.approved) return "pending";
-  return new Date(data.expires_at).getTime() > Date.now() ? "active" : "expired";
+  if (!data) return { status: "unlimited", expiresAt: null };
+  if (!data.approved) return { status: "pending", expiresAt: data.expires_at };
+  const status: SubscriptionStatus = new Date(data.expires_at).getTime() > Date.now() ? "active" : "expired";
+  return { status, expiresAt: data.expires_at };
+}
+
+export async function checkSubscriptionStatus(userId: string): Promise<SubscriptionStatus> {
+  return (await getSubscriptionDetails(userId)).status;
 }
 
 // The admin Edge Functions (admin-create-account, admin-list-accounts)
