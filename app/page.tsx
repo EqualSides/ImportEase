@@ -17,6 +17,7 @@ import SmartChoiceGroupGrid from "@/components/SmartChoiceGroupGrid";
 import StandardCommentGroupGrid from "@/components/StandardCommentGroupGrid";
 import RefFeeScheduleGrid from "@/components/RefFeeScheduleGrid";
 import VirProcessGrid from "@/components/VirProcessGrid";
+import ASIGroupGrid from "@/components/ASIGroupGrid";
 import FlatGrid, { type FlatGridColumnMeta } from "@/components/FlatGrid";
 import {
   getStandardChoiceValueNodes,
@@ -169,6 +170,14 @@ import {
   toProcessEmailSettingRow,
   toActivityStatusRow,
 } from "@/lib/xml/virProcess";
+import {
+  getASIFieldNodes,
+  getASIDropdownValueNodes,
+  inferCommonAgencyId as inferCommonAgencyIdASIGroup,
+  toASIGroupRow,
+  toASIFieldRow,
+  toASIDropdownValueRow,
+} from "@/lib/xml/asiGroup";
 import { detectSensitiveEntries } from "@/lib/sensitiveFiles";
 import { exportZipInWorker, parseZipInWorker } from "@/lib/worker/client";
 import type {
@@ -192,6 +201,7 @@ import type {
   StandardCommentGroupZipEntry,
   RefFeeScheduleZipEntry,
   VirProcessZipEntry,
+  ASIGroupZipEntry,
   TimeGroupZipEntry,
   TimeTypesZipEntry,
   ZipEntryData,
@@ -225,7 +235,8 @@ type EditableZipEntry =
   | SmartChoiceGroupZipEntry
   | StandardCommentGroupZipEntry
   | RefFeeScheduleZipEntry
-  | VirProcessZipEntry;
+  | VirProcessZipEntry
+  | ASIGroupZipEntry;
 
 function isEditableEntry(entry: ZipEntryData): entry is EditableZipEntry {
   return (
@@ -249,7 +260,8 @@ function isEditableEntry(entry: ZipEntryData): entry is EditableZipEntry {
     entry.kind === "smartChoiceGroup" ||
     entry.kind === "standardCommentGroup" ||
     entry.kind === "refFeeSchedule" ||
-    entry.kind === "virProcess"
+    entry.kind === "virProcess" ||
+    entry.kind === "asiGroup"
   );
 }
 
@@ -303,6 +315,8 @@ function inferAgencyIdForEntry(entry: EditableZipEntry): string {
       return inferCommonAgencyIdRefFeeSchedule(entry.records.map(toRefFeeScheduleRow));
     case "virProcess":
       return inferCommonAgencyIdVirProcess(entry.records.map(toVirProcessRow));
+    case "asiGroup":
+      return inferCommonAgencyIdASIGroup(entry.records.map(toASIGroupRow));
   }
 }
 
@@ -347,7 +361,7 @@ const CATEGORY_OPTIONS: { value: string; label: string; available: boolean }[] =
   { value: "acaConfiguration", label: "ACA Configuration", available: false },
   { value: "agencyGroup", label: "Agency Group", available: false },
   { value: "formLayoutEditor", label: "Form Layout Editor", available: false },
-  { value: "asiGroups", label: "ASI Groups", available: false },
+  { value: "asiGroup", label: "ASI Groups", available: true },
 ];
 
 // Fields the schema doc (docs/schema-standard-choice.md) marks "always" —
@@ -749,6 +763,21 @@ function makeBlankVirProcessEntry(): VirProcessZipEntry {
   };
 }
 
+function makeBlankASIGroupEntry(): ASIGroupZipEntry {
+  return {
+    path: "ASIGroupModel.xml",
+    kind: "asiGroup",
+    listAttrs: {
+      version: "9.0.0",
+      minorVersion: "26",
+      exportUser: "",
+      exportDateTime: "",
+      description: "null",
+    },
+    records: [],
+  };
+}
+
 function validateReferenceMaskEntries(entries: ReferenceMaskZipEntry[]): string | null {
   for (const entry of entries) {
     for (const record of entry.records) {
@@ -1057,6 +1086,30 @@ function validateVirProcessEntries(entries: VirProcessZipEntry[]): string | null
   return null;
 }
 
+function validateASIGroupEntries(entries: ASIGroupZipEntry[]): string | null {
+  for (const entry of entries) {
+    for (const record of entry.records) {
+      const row = toASIGroupRow(record);
+      if (!row.appSpecInfoGroupCode.trim()) {
+        return `"${entry.path}" has an ASI Group with no Group Code set — every group needs a Group Code before export.`;
+      }
+      for (const fieldNode of getASIFieldNodes(record)) {
+        const fieldRow = toASIFieldRow(fieldNode);
+        if (!fieldRow.r1CheckboxDesc.trim()) {
+          return `"${entry.path}" — "${row.appSpecInfoGroupCode}" has an ASI field with no Field Description set — every field needs one before export.`;
+        }
+        for (const valueNode of getASIDropdownValueNodes(fieldNode)) {
+          const valueRow = toASIDropdownValueRow(valueNode);
+          if (!valueRow.value.trim()) {
+            return `"${entry.path}" — "${row.appSpecInfoGroupCode}" / "${fieldRow.r1CheckboxDesc}" has a value with no Value set — every value needs one before export.`;
+          }
+        }
+      }
+    }
+  }
+  return null;
+}
+
 function withZipExtension(name: string): string {
   const trimmed = name.trim();
   if (!trimmed) return "export.zip";
@@ -1341,7 +1394,9 @@ export default function Home() {
                                                 ? makeBlankRefFeeScheduleEntry()
                                                 : category === "virProcess"
                                                   ? makeBlankVirProcessEntry()
-                                                  : null;
+                                                  : category === "asiGroup"
+                                                    ? makeBlankASIGroupEntry()
+                                                    : null;
       if (!blankEntry) return;
       if (
         zipResult &&
@@ -1437,6 +1492,9 @@ export default function Home() {
   const virProcessEntries = editableEntries.filter(
     (en): en is VirProcessZipEntry => en.kind === "virProcess"
   );
+  const asiGroupEntries = editableEntries.filter(
+    (en): en is ASIGroupZipEntry => en.kind === "asiGroup"
+  );
 
   const sensitiveMatches = zipResult
     ? detectSensitiveEntries(zipResult.entries.map((en) => en.path))
@@ -1478,7 +1536,8 @@ export default function Home() {
       validateSmartChoiceGroupEntries(smartChoiceGroupEntries) ??
       validateStandardCommentGroupEntries(standardCommentGroupEntries) ??
       validateRefFeeScheduleEntries(refFeeScheduleEntries) ??
-      validateVirProcessEntries(virProcessEntries);
+      validateVirProcessEntries(virProcessEntries) ??
+      validateASIGroupEntries(asiGroupEntries);
     if (validationError) {
       setError(validationError);
       return;
@@ -1544,6 +1603,7 @@ export default function Home() {
     standardCommentGroupEntries,
     refFeeScheduleEntries,
     virProcessEntries,
+    asiGroupEntries,
   ]);
 
   // Cascading on every keystroke would be wasteful (it touches every
@@ -1992,8 +2052,17 @@ export default function Home() {
               gridThemeClass={gridThemeClass}
               agencyId={agencyId}
             />
-          ) : (
+          ) : activeEntry.kind === "virProcess" ? (
             <VirProcessGrid
+              key={activeEntry.path}
+              ref={gridRef}
+              records={activeEntry.records}
+              onChange={handleDataChange}
+              gridThemeClass={gridThemeClass}
+              agencyId={agencyId}
+            />
+          ) : (
+            <ASIGroupGrid
               key={activeEntry.path}
               ref={gridRef}
               records={activeEntry.records}
