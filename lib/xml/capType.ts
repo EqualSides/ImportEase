@@ -113,6 +113,7 @@ export function buildExportedCapTypeXml(file: ParsedCapTypeFile): string {
 // ---------------------------------------------------------------------------
 
 export interface CapTypeRow {
+  [field: string]: string;
   uid: string;
   refId: string;
   group: string;
