@@ -189,6 +189,13 @@ export interface DepartmentTypeZipEntry {
   records: PNode[];
 }
 
+export interface ConditionsZipEntry {
+  path: string;
+  kind: "conditions";
+  listAttrs: ListAttrs;
+  records: PNode[];
+}
+
 export interface PassthroughZipEntry {
   path: string;
   kind: "passthrough";
@@ -227,6 +234,7 @@ export type ZipEntryData =
   | InspectionGroupZipEntry
   | RefDocumentZipEntry
   | DepartmentTypeZipEntry
+  | ConditionsZipEntry
   | PassthroughZipEntry;
 
 export interface ParseZipResult {

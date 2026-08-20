@@ -32,6 +32,15 @@ import {
   toDepartmentTypeRow,
 } from "@/lib/xml/departmentType";
 import {
+  createConditionNode,
+  deleteCondition,
+  findConditionByUid,
+  inferCommonAgencyId as inferCommonAgencyIdConditions,
+  nextRefIdNumber as nextRefIdNumberConditions,
+  setConditionField,
+  toConditionRow,
+} from "@/lib/xml/conditions";
+import {
   getStandardChoiceValueNodes,
   inferCommonAgencyId as inferCommonAgencyIdStandardChoice,
   toStandardChoiceRow,
@@ -246,6 +255,7 @@ import type {
   InspectionGroupZipEntry,
   RefDocumentZipEntry,
   DepartmentTypeZipEntry,
+  ConditionsZipEntry,
   TimeGroupZipEntry,
   TimeTypesZipEntry,
   ZipEntryData,
@@ -285,7 +295,8 @@ type EditableZipEntry =
   | FormLayoutEditorZipEntry
   | InspectionGroupZipEntry
   | RefDocumentZipEntry
-  | DepartmentTypeZipEntry;
+  | DepartmentTypeZipEntry
+  | ConditionsZipEntry;
 
 function isEditableEntry(entry: ZipEntryData): entry is EditableZipEntry {
   return (
@@ -315,7 +326,8 @@ function isEditableEntry(entry: ZipEntryData): entry is EditableZipEntry {
     entry.kind === "formLayoutEditor" ||
     entry.kind === "inspectionGroup" ||
     entry.kind === "refDocument" ||
-    entry.kind === "departmentType"
+    entry.kind === "departmentType" ||
+    entry.kind === "conditions"
   );
 }
 
@@ -381,6 +393,8 @@ function inferAgencyIdForEntry(entry: EditableZipEntry): string {
       return inferCommonAgencyIdRefDocument(entry.records.map(toRefDocumentRow));
     case "departmentType":
       return inferCommonAgencyIdDepartmentType(entry.records.map(toDepartmentTypeRow));
+    case "conditions":
+      return inferCommonAgencyIdConditions(entry.records.map(toConditionRow));
   }
 }
 
@@ -400,7 +414,7 @@ const CATEGORY_OPTIONS: { value: string; label: string; available: boolean }[] =
   { value: "capType", label: "Cap Type", available: true },
   { value: "checklistGroup", label: "Checklist Group", available: true },
   { value: "commentGroup", label: "Comment Group", available: true },
-  { value: "conditions", label: "Conditions", available: false },
+  { value: "conditions", label: "Conditions", available: true },
   { value: "departmentType", label: "Department Type", available: true },
   { value: "emailMessage", label: "Email Message", available: true },
   { value: "formLayoutEditor", label: "Form Layout Editor", available: true },
@@ -917,6 +931,21 @@ function makeBlankDepartmentTypeEntry(): DepartmentTypeZipEntry {
   };
 }
 
+function makeBlankConditionsEntry(): ConditionsZipEntry {
+  return {
+    path: "ConditionsModel.xml",
+    kind: "conditions",
+    listAttrs: {
+      version: "9.0.0",
+      minorVersion: "26",
+      exportUser: "",
+      exportDateTime: "",
+      description: "null",
+    },
+    records: [],
+  };
+}
+
 function validateReferenceMaskEntries(entries: ReferenceMaskZipEntry[]): string | null {
   for (const entry of entries) {
     for (const record of entry.records) {
@@ -1327,6 +1356,18 @@ function validateDepartmentTypeEntries(entries: DepartmentTypeZipEntry[]): strin
   return null;
 }
 
+function validateConditionsEntries(entries: ConditionsZipEntry[]): string | null {
+  for (const entry of entries) {
+    for (const record of entry.records) {
+      const row = toConditionRow(record);
+      if (!row.conditionDesc.trim()) {
+        return `"${entry.path}" has a Condition with no Condition Description set — every row needs a description before export.`;
+      }
+    }
+  }
+  return null;
+}
+
 function withZipExtension(name: string): string {
   const trimmed = name.trim();
   if (!trimmed) return "export.zip";
@@ -1471,6 +1512,37 @@ const DEPARTMENT_TYPE_COLUMNS: FlatGridColumnMeta[] = [
   { field: "serviceProviderCode", headerName: "Agency ID", editable: true, hide: true },
   { field: "subGroupDescription", headerName: "Subgroup Description", editable: true, hide: true },
   { field: "departMentTypeKey", headerName: "Department Type Key", editable: false, hide: true },
+];
+
+const CONDITIONS_COLUMNS: FlatGridColumnMeta[] = [
+  { field: "conditionDesc", headerName: "Condition Description", editable: true },
+  { field: "conditionNbr", headerName: "Condition #", editable: false, hide: true },
+  { field: "conditionComment", headerName: "Comment", editable: true, hide: true },
+  { field: "conditionGroup", headerName: "Group", editable: true, hide: true },
+  { field: "conditionType", headerName: "Type", editable: true, hide: true },
+  { field: "serviceProviderCode", headerName: "Agency ID", editable: true, hide: true },
+  { field: "conditionApproveFlag", headerName: "Approve Flag", editable: true, hide: true },
+  { field: "impactCode", headerName: "Impact Code", editable: true, hide: true },
+  { field: "displayConditionNotice", headerName: "Display Notice", editable: true, hide: true },
+  { field: "displayNoticeOnACA", headerName: "Display Notice on ACA", editable: true, hide: true },
+  {
+    field: "displayNoticeOnACAFee",
+    headerName: "Display Notice on ACA Fee",
+    editable: true,
+    hide: true,
+  },
+  { field: "includeInConditionName", headerName: "Include in Cond. Name", editable: true, hide: true },
+  {
+    field: "includeInShortDescription",
+    headerName: "Include in Short Desc.",
+    editable: true,
+    hide: true,
+  },
+  { field: "inheritable", headerName: "Inheritable", editable: true, hide: true },
+  { field: "isInspectionSelected", headerName: "Inspection Selected", editable: true, hide: true },
+  { field: "isPermissionSelected", headerName: "Permission Selected", editable: true, hide: true },
+  { field: "isRecordTypesSelected", headerName: "Record Types Selected", editable: true, hide: true },
+  { field: "isWorkflowSelected", headerName: "Workflow Selected", editable: true, hide: true },
 ];
 
 export default function Home() {
@@ -1670,7 +1742,9 @@ export default function Home() {
                                                             ? makeBlankRefDocumentEntry()
                                                             : category === "departmentType"
                                                               ? makeBlankDepartmentTypeEntry()
-                                                              : null;
+                                                              : category === "conditions"
+                                                                ? makeBlankConditionsEntry()
+                                                                : null;
       if (!blankEntry) return;
       if (
         zipResult &&
@@ -1784,6 +1858,9 @@ export default function Home() {
   const departmentTypeEntries = editableEntries.filter(
     (en): en is DepartmentTypeZipEntry => en.kind === "departmentType"
   );
+  const conditionsEntries = editableEntries.filter(
+    (en): en is ConditionsZipEntry => en.kind === "conditions"
+  );
 
   const sensitiveMatches = zipResult
     ? detectSensitiveEntries(zipResult.entries.map((en) => en.path))
@@ -1831,7 +1908,8 @@ export default function Home() {
       validateFormLayoutEditorEntries(formLayoutEditorEntries) ??
       validateInspectionGroupEntries(inspectionGroupEntries) ??
       validateRefDocumentEntries(refDocumentEntries) ??
-      validateDepartmentTypeEntries(departmentTypeEntries);
+      validateDepartmentTypeEntries(departmentTypeEntries) ??
+      validateConditionsEntries(conditionsEntries);
     if (validationError) {
       setError(validationError);
       return;
@@ -1903,6 +1981,7 @@ export default function Home() {
     inspectionGroupEntries,
     refDocumentEntries,
     departmentTypeEntries,
+    conditionsEntries,
   ]);
 
   // Cascading on every keystroke would be wasteful (it touches every
@@ -2406,7 +2485,7 @@ export default function Home() {
               gridThemeClass={gridThemeClass}
               agencyId={agencyId}
             />
-          ) : (
+          ) : activeEntry.kind === "departmentType" ? (
             <FlatGrid
               key={activeEntry.path}
               ref={gridRef}
@@ -2424,6 +2503,25 @@ export default function Home() {
               deleteNode={deleteDepartmentType}
               toolbarLabel="Department Types"
               addButtonLabel="+ Add Department Type"
+            />
+          ) : (
+            <FlatGrid
+              key={activeEntry.path}
+              ref={gridRef}
+              records={activeEntry.records}
+              onChange={handleDataChange}
+              gridThemeClass={gridThemeClass}
+              agencyId={agencyId}
+              columnMeta={CONDITIONS_COLUMNS}
+              toRow={toConditionRow}
+              setField={setConditionField}
+              agencyIdField="serviceProviderCode"
+              createNode={createConditionNode}
+              nextRefIdNumber={nextRefIdNumberConditions}
+              findByUid={findConditionByUid}
+              deleteNode={deleteCondition}
+              toolbarLabel="Conditions"
+              addButtonLabel="+ Add Condition"
             />
           )
         ) : (

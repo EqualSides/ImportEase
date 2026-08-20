@@ -102,6 +102,7 @@ import {
   isDepartmentTypeXml,
   parseDepartmentTypeXml,
 } from "../xml/departmentType";
+import { buildExportedConditionsXml, isConditionsXml, parseConditionsXml } from "../xml/conditions";
 import type { ParseZipResult, ZipEntryData } from "../types";
 
 /**
@@ -163,6 +164,7 @@ const DETECTORS: {
   { kind: "inspectionGroup", sniff: isInspectionGroupXml, parse: parseInspectionGroupXml },
   { kind: "refDocument", sniff: isRefDocumentXml, parse: parseRefDocumentXml },
   { kind: "departmentType", sniff: isDepartmentTypeXml, parse: parseDepartmentTypeXml },
+  { kind: "conditions", sniff: isConditionsXml, parse: parseConditionsXml },
 ];
 
 export async function parseUploadedZip(
@@ -350,6 +352,11 @@ export async function buildExportZip(entries: ZipEntryData[]): Promise<Uint8Arra
       zip.file(
         entry.path,
         buildExportedDepartmentTypeXml({ listAttrs: entry.listAttrs, records: entry.records })
+      );
+    } else if (entry.kind === "conditions") {
+      zip.file(
+        entry.path,
+        buildExportedConditionsXml({ listAttrs: entry.listAttrs, records: entry.records })
       );
     } else {
       zip.file(entry.path, entry.bytes);
