@@ -13,7 +13,7 @@ import {
 
 /**
  * SmartChoiceGroupModel round-trip fidelity, against a real 2-record excerpt
- * (fixtures/smart-choice-group/scg-real.xml — two groups, each with 52 smart
+ * (fixtures/smart-choice-group/scg-real.xml — two groups, each with 26 smart
  * choices, one of which per group carries two options, taken from the same
  * 136-record agency export) — same structural-diff approach as
  * tests/roundtrip.test.ts. This is the third three-level category (see
@@ -109,7 +109,7 @@ describe("SmartChoiceGroupModel round-trip fidelity", () => {
     const parsed = parseSmartChoiceGroupXml(original);
     const group = parsed.records.find((r) => toSmartChoiceGroupRow(r).groupCode === "LIC_AMND")!;
     const row = toSmartChoiceGroupRow(group);
-    expect(row.choiceCount).toBe(52);
+    expect(row.choiceCount).toBe(26);
 
     const choices = getSmartChoiceNodes(group);
     const populated = choices.find((c) => toSmartChoiceRow(c).optionCount > 0)!;

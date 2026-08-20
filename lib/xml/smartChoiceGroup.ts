@@ -9,7 +9,7 @@
  * shape family as GuideSheet.
  *
  * Confirmed against a real 2-record sample
- * (fixtures/smart-choice-group/scg-real.xml: two groups, each with 52 smart
+ * (fixtures/smart-choice-group/scg-real.xml: two groups, each with 26 smart
  * choices, of which one smart choice per group carries two options). No
  * `refId` attribute on smart choices or options in the real sample — only
  * the group itself carries one, and (consistent with every other category
