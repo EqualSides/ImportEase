@@ -20,3 +20,20 @@ const USERNAME_EMAIL_DOMAIN = "accounts.theperpetualhive.com";
 export function usernameToEmail(username: string): string {
   return `${username.trim().toLowerCase()}@${USERNAME_EMAIL_DOMAIN}`;
 }
+
+// Only this account sees the admin panel and can call the
+// admin-create-account Edge Function — enforced again server-side there
+// against the caller's own verified session, this is just what the UI
+// checks to decide whether to show the panel at all.
+export const ADMIN_EMAIL = "daniel@accounts.theperpetualhive.com";
+
+export interface AccessRequestRow {
+  id: string;
+  created_at: string;
+  company_name: string;
+  contact_name: string;
+  email: string;
+  phone: string | null;
+  message: string | null;
+  status: string;
+}

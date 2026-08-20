@@ -23,7 +23,8 @@ import InspectionGroupGrid from "@/components/InspectionGroupGrid";
 import RefDocumentGrid from "@/components/RefDocumentGrid";
 import FlatGrid, { type FlatGridColumnMeta } from "@/components/FlatGrid";
 import AuthModal from "@/components/AuthModal";
-import { supabase } from "@/lib/supabase/client";
+import AdminPanel from "@/components/AdminPanel";
+import { supabase, ADMIN_EMAIL } from "@/lib/supabase/client";
 import type { Session } from "@supabase/supabase-js";
 import {
   createDepartmentTypeNode,
@@ -1571,6 +1572,7 @@ export default function Home() {
   const [session, setSession] = useState<Session | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [adminPanelOpen, setAdminPanelOpen] = useState(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -2161,6 +2163,11 @@ export default function Home() {
         </button>
 
         {/* 7 */}
+        {session?.user?.email === ADMIN_EMAIL && (
+          <button className="btn" style={{ flexShrink: 0 }} onClick={() => setAdminPanelOpen(true)}>
+            Admin
+          </button>
+        )}
         {session ? (
           <button className="btn" style={{ flexShrink: 0 }} onClick={() => supabase.auth.signOut()}>
             Logout
@@ -2175,6 +2182,7 @@ export default function Home() {
       {authModalOpen && (
         <AuthModal onClose={() => setAuthModalOpen(false)} onSignedIn={() => setAuthModalOpen(false)} />
       )}
+      {adminPanelOpen && <AdminPanel onClose={() => setAdminPanelOpen(false)} />}
 
       {undecidedSensitive.length > 0 && (
         <div className="sensitive-gate">

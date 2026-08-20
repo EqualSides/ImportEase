@@ -670,3 +670,98 @@ body.resizing-panels {
   color: var(--text-muted);
   text-align: center;
 }
+
+/* Admin panel ------------------------------------------------------------ */
+
+.admin-panel {
+  width: 520px;
+}
+
+.admin-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.admin-panel-header h2 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.admin-panel-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.admin-request-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.admin-request-row {
+  border: 1px solid var(--border-hairline);
+  border-radius: 8px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.admin-request-company {
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.admin-request-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: var(--font-mono), monospace;
+}
+
+.admin-request-message {
+  font-size: 12px;
+  color: var(--text-primary);
+  font-style: italic;
+}
+
+.admin-request-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.admin-request-actions input {
+  font-family: var(--font-mono), monospace;
+  font-size: 12px;
+  background: var(--bg-base);
+  color: var(--text-primary);
+  border: 1px solid var(--border-hairline);
+  border-radius: 5px;
+  padding: 5px 7px;
+  width: 120px;
+}
+
+.admin-request-actions input:focus {
+  outline: none;
+  border-color: var(--accent-cyan-text);
+}
+
+.admin-request-actions .auth-submit {
+  margin: 0;
+  padding: 6px 10px;
+  width: auto;
+}
+
+.admin-request-actions .auth-form-error {
+  flex-basis: 100%;
+}
