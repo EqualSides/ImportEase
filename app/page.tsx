@@ -1851,20 +1851,11 @@ export default function Home() {
           <option value="" disabled hidden>
             Start new file
           </option>
-          <optgroup label="Available now">
-            {CATEGORY_OPTIONS.filter((c) => c.available).map((c) => (
-              <option key={c.value} value={c.value}>
-                {c.label}
-              </option>
-            ))}
-          </optgroup>
-          <optgroup label="Coming soon">
-            {CATEGORY_OPTIONS.filter((c) => !c.available).map((c) => (
-              <option key={c.value} value={c.value} disabled>
-                {c.label}
-              </option>
-            ))}
-          </optgroup>
+          {CATEGORY_OPTIONS.map((c) => (
+            <option key={c.value} value={c.value} disabled={!c.available}>
+              {c.label}
+            </option>
+          ))}
         </select>
 
         {editableEntries.length > 1 && (
