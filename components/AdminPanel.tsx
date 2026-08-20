@@ -91,6 +91,7 @@ interface AccountRow {
   created_at: string;
   last_sign_in_at: string | null;
   expires_at: string | null;
+  approved: boolean;
 }
 
 function expiryLabel(expiresAt: string | null): { text: string; className: string } {
@@ -201,6 +202,7 @@ function AccountRowItem({ account, onChanged }: { account: AccountRow; onChanged
           {account.last_sign_in_at ? new Date(account.last_sign_in_at).toLocaleString() : "never"}
         </div>
         <div className={`admin-request-meta ${expiry.className}`}>{expiry.text}</div>
+        {!account.approved && <div className="admin-request-meta expiry-soon">Pending approval</div>}
       </div>
       <div className="admin-request-actions">
         <button className="btn" disabled={!!submitting} onClick={() => renew("half")}>
@@ -242,6 +244,96 @@ function RequestRow({
   onHandled: () => void;
   onReject: () => void;
 }) {
+  const isNew = request.status === "new";
+  // Self-signup rows already have a real (locked) account — user_id is
+  // set by the self-signup Edge Function. Older rows from before
+  // self-signup existed have no account yet and still need one created
+  // manually.
+  const isSelfSignup = !!request.user_id;
+
+  return (
+    <div className="admin-request-row">
+      <div className="admin-request-info">
+        <div className="admin-request-company">{request.company_name}</div>
+        <div className="admin-request-meta">
+          {request.contact_name} &middot; {request.email}
+          {request.phone ? ` · ${request.phone}` : ""}
+        </div>
+        {request.message && <div className="admin-request-message">&ldquo;{request.message}&rdquo;</div>}
+        <div className="admin-request-meta">
+          Status: <strong>{request.status}</strong> &middot;{" "}
+          {new Date(request.created_at).toLocaleString()}
+        </div>
+      </div>
+      {isNew &&
+        (isSelfSignup ? (
+          <ApproveDenyActions request={request} onHandled={onHandled} onReject={onReject} />
+        ) : (
+          <LegacyCreateAccountActions request={request} onHandled={onHandled} onReject={onReject} />
+        ))}
+    </div>
+  );
+}
+
+function ApproveDenyActions({
+  request,
+  onHandled,
+  onReject,
+}: {
+  request: AccessRequestRow;
+  onHandled: () => void;
+  onReject: () => void;
+}) {
+  const [period, setPeriod] = useState<"half" | "year">("half");
+  const [submitting, setSubmitting] = useState<"approve" | "deny" | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const approve = async () => {
+    setSubmitting("approve");
+    setError(null);
+    const { data, error: fnError } = await supabase.functions.invoke("admin-create-account", {
+      body: { userId: request.user_id, action: "renew", period, requestId: request.id },
+    });
+    setSubmitting(null);
+    if (fnError || data?.error) {
+      setError(data?.error || fnError?.message || "Something went wrong.");
+      return;
+    }
+    onHandled();
+  };
+
+  const deny = async () => {
+    setSubmitting("deny");
+    await onReject();
+    setSubmitting(null);
+  };
+
+  return (
+    <div className="admin-request-actions">
+      <select value={period} onChange={(e) => setPeriod(e.target.value as typeof period)}>
+        <option value="half">Paid: this half</option>
+        <option value="year">Paid: full year</option>
+      </select>
+      <button className="auth-submit" disabled={!!submitting} onClick={approve}>
+        {submitting === "approve" ? "Approving…" : "Approve"}
+      </button>
+      <button className="btn btn-danger" disabled={!!submitting} onClick={deny}>
+        {submitting === "deny" ? "Denying…" : "Deny"}
+      </button>
+      {error && <div className="auth-form-error">{error}</div>}
+    </div>
+  );
+}
+
+function LegacyCreateAccountActions({
+  request,
+  onHandled,
+  onReject,
+}: {
+  request: AccessRequestRow;
+  onHandled: () => void;
+  onReject: () => void;
+}) {
   const [username, setUsername] = useState(
     request.company_name
       .toLowerCase()
@@ -252,8 +344,6 @@ function RequestRow({
   const [expiryOption, setExpiryOption] = useState<"none" | "half" | "year">("half");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const isNew = request.status === "new";
 
   const createAccount = async () => {
     if (!username.trim() || password.length < 4) {
@@ -274,47 +364,31 @@ function RequestRow({
   };
 
   return (
-    <div className="admin-request-row">
-      <div className="admin-request-info">
-        <div className="admin-request-company">{request.company_name}</div>
-        <div className="admin-request-meta">
-          {request.contact_name} &middot; {request.email}
-          {request.phone ? ` · ${request.phone}` : ""}
-        </div>
-        {request.message && <div className="admin-request-message">&ldquo;{request.message}&rdquo;</div>}
-        <div className="admin-request-meta">
-          Status: <strong>{request.status}</strong> &middot;{" "}
-          {new Date(request.created_at).toLocaleString()}
-        </div>
-      </div>
-      {isNew && (
-        <div className="admin-request-actions">
-          <input
-            type="text"
-            placeholder="username"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-          />
-          <input
-            type="text"
-            placeholder="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
-          <select value={expiryOption} onChange={(e) => setExpiryOption(e.target.value as typeof expiryOption)}>
-            <option value="half">Paid: this half</option>
-            <option value="year">Paid: full year</option>
-            <option value="none">No expiration (test)</option>
-          </select>
-          <button className="auth-submit" disabled={submitting} onClick={createAccount}>
-            {submitting ? "Creating…" : "Create Account"}
-          </button>
-          <button className="btn btn-danger" onClick={onReject} disabled={submitting}>
-            Reject
-          </button>
-          {error && <div className="auth-form-error">{error}</div>}
-        </div>
-      )}
+    <div className="admin-request-actions">
+      <input
+        type="text"
+        placeholder="username"
+        value={username}
+        onChange={(e) => setUsername(e.target.value)}
+      />
+      <input
+        type="text"
+        placeholder="password"
+        value={password}
+        onChange={(e) => setPassword(e.target.value)}
+      />
+      <select value={expiryOption} onChange={(e) => setExpiryOption(e.target.value as typeof expiryOption)}>
+        <option value="half">Paid: this half</option>
+        <option value="year">Paid: full year</option>
+        <option value="none">No expiration (test)</option>
+      </select>
+      <button className="auth-submit" disabled={submitting} onClick={createAccount}>
+        {submitting ? "Creating…" : "Create Account"}
+      </button>
+      <button className="btn btn-danger" onClick={onReject} disabled={submitting}>
+        Reject
+      </button>
+      {error && <div className="auth-form-error">{error}</div>}
     </div>
   );
 }

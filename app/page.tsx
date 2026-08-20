@@ -1573,7 +1573,7 @@ export default function Home() {
   const [authChecked, setAuthChecked] = useState(false);
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [adminPanelOpen, setAdminPanelOpen] = useState(false);
-  const [subscriptionExpired, setSubscriptionExpired] = useState(false);
+  const [accessBlockedReason, setAccessBlockedReason] = useState<"expired" | "pending" | null>(null);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -1589,16 +1589,18 @@ export default function Home() {
   }, []);
 
   // Safety net for sessions that were already active when the account
-  // expired (or an admin force-expires it mid-session) — the sign-in-time
-  // check in AuthModal only catches expiration at the moment of login.
+  // expired/got force-expired, or a self-signup account that's still
+  // pending — the sign-in-time check in AuthModal only catches these at
+  // the moment of login.
   useEffect(() => {
     if (!session?.user || session.user.email === ADMIN_EMAIL) {
-      setSubscriptionExpired(false);
+      setAccessBlockedReason(null);
       return;
     }
     let cancelled = false;
     checkSubscriptionStatus(session.user.id).then((status) => {
-      if (!cancelled) setSubscriptionExpired(status === "expired");
+      if (cancelled) return;
+      setAccessBlockedReason(status === "expired" ? "expired" : status === "pending" ? "pending" : null);
     });
     return () => {
       cancelled = true;
@@ -2088,7 +2090,7 @@ export default function Home() {
             accept=".zip"
             multiple
             onChange={handleFileChange}
-            disabled={loading || !session || subscriptionExpired}
+            disabled={loading || !session || !!accessBlockedReason}
           />
         </label>
 
@@ -2137,7 +2139,7 @@ export default function Home() {
           value=""
           onChange={handleNewFile}
           aria-label="Start a new file"
-          disabled={!session || subscriptionExpired}
+          disabled={!session || !!accessBlockedReason}
         >
           <option value="" disabled hidden>
             Start new file
@@ -2175,7 +2177,9 @@ export default function Home() {
         <button
           className="btn btn-primary"
           onClick={handleExport}
-          disabled={!zipResult || exporting || undecidedSensitive.length > 0 || !session || subscriptionExpired}
+          disabled={
+            !zipResult || exporting || undecidedSensitive.length > 0 || !session || !!accessBlockedReason
+          }
         >
           {exporting ? "Building zip…" : "Export .zip"}
         </button>
@@ -2260,12 +2264,16 @@ export default function Home() {
         {!session ? (
           <div className="main-empty">
             {authChecked
-              ? "Sign in to use ImportEase — click “Login” above. No account? Use “Request Access”."
+              ? "Sign in to use ImportEase — click “Login” above. No account? Use “Sign Up”."
               : "Checking sign-in status…"}
           </div>
-        ) : subscriptionExpired ? (
+        ) : accessBlockedReason === "expired" ? (
           <div className="main-empty">
             Your subscription has expired. Please contact us to renew access.
+          </div>
+        ) : accessBlockedReason === "pending" ? (
+          <div className="main-empty">
+            Your account is pending approval. We&rsquo;ll notify you once access is granted.
           </div>
         ) : activeEntry ? (
           activeEntry.kind === "standardChoice" ? (

@@ -30,7 +30,7 @@ export default function AuthModal({ onClose, onSignedIn }: AuthModalProps) {
             className={tab === "requestAccess" ? "auth-tab active" : "auth-tab"}
             onClick={() => setTab("requestAccess")}
           >
-            Request Access
+            Sign Up
           </button>
         </div>
         {tab === "signIn" ? (
@@ -72,6 +72,12 @@ function SignInForm({ onSignedIn }: { onSignedIn: () => void }) {
         setError("Your subscription has expired. Please contact us to renew.");
         return;
       }
+      if (status === "pending") {
+        await supabase.auth.signOut();
+        setSubmitting(false);
+        setError("Your account is pending approval. We'll notify you once access is granted.");
+        return;
+      }
     }
 
     setSubmitting(false);
@@ -104,13 +110,18 @@ function SignInForm({ onSignedIn }: { onSignedIn: () => void }) {
         {submitting ? "Signing in…" : "Sign In"}
       </button>
       <p className="auth-form-hint">
-        Don&rsquo;t have an account? Switch to &ldquo;Request Access&rdquo; above.
+        Don&rsquo;t have an account? Switch to &ldquo;Sign Up&rdquo; above.
       </p>
     </form>
   );
 }
 
+// Creates the account immediately (with the username/password the
+// visitor picks) but it's locked out until an admin renews it — see
+// checkSubscriptionStatus's "pending" state and the self-signup Edge
+// Function's approved=false insert.
 function RequestAccessForm({ onSubmitted }: { onSubmitted: () => void }) {
+  const [password, setPassword] = useState("");
   const [companyName, setCompanyName] = useState("");
   const [contactName, setContactName] = useState("");
   const [email, setEmail] = useState("");
@@ -120,21 +131,36 @@ function RequestAccessForm({ onSubmitted }: { onSubmitted: () => void }) {
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
 
+  // The company name doubles as the username — shared per-company
+  // accounts are always named after the company (byrne, clarkco,
+  // fortytwo, …), so there's no separate field for it.
+  const username = companyName
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "")
+    .slice(0, 24);
+
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!companyName.trim() || !contactName.trim() || !email.trim()) return;
+    if (!username || password.length < 4 || !contactName.trim() || !email.trim()) {
+      setError("Company name, a password (4+ chars), your name, and email are all required.");
+      return;
+    }
     setSubmitting(true);
     setError(null);
-    const { error: insertError } = await supabase.from("access_requests").insert({
-      company_name: companyName.trim(),
-      contact_name: contactName.trim(),
-      email: email.trim(),
-      phone: phone.trim() || null,
-      message: message.trim() || null,
+    const { data, error: fnError } = await supabase.functions.invoke("self-signup", {
+      body: {
+        username,
+        password,
+        companyName: companyName.trim(),
+        contactName: contactName.trim(),
+        email: email.trim(),
+        phone: phone.trim() || undefined,
+        message: message.trim() || undefined,
+      },
     });
     setSubmitting(false);
-    if (insertError) {
-      setError("Something went wrong submitting your request. Please try again.");
+    if (fnError || data?.error) {
+      setError(data?.error || fnError?.message || "Something went wrong. Please try again.");
       return;
     }
     setDone(true);
@@ -144,7 +170,8 @@ function RequestAccessForm({ onSubmitted }: { onSubmitted: () => void }) {
     return (
       <div className="auth-form">
         <p className="auth-form-success">
-          Thanks — your request has been received. We&rsquo;ll reach out to set up your account.
+          Your account has been created and is pending approval. We&rsquo;ll notify you once access is
+          granted — then sign in with the username and password you just set.
         </p>
         <button type="button" className="auth-submit" onClick={onSubmitted}>
           Back to Sign In
@@ -157,7 +184,24 @@ function RequestAccessForm({ onSubmitted }: { onSubmitted: () => void }) {
     <form className="auth-form" onSubmit={handleSubmit}>
       <label>
         Company Name
-        <input type="text" value={companyName} onChange={(e) => setCompanyName(e.target.value)} autoFocus />
+        <input
+          type="text"
+          value={companyName}
+          onChange={(e) => setCompanyName(e.target.value)}
+          autoFocus
+        />
+      </label>
+      <p className="auth-form-hint" style={{ margin: "-8px 0 4px", textAlign: "left" }}>
+        This will be your username when logging in{username ? ` (as “${username}”)` : ""}.
+      </p>
+      <label>
+        Password
+        <input
+          type="password"
+          autoComplete="new-password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+        />
       </label>
       <label>
         Your Name
@@ -177,8 +221,9 @@ function RequestAccessForm({ onSubmitted }: { onSubmitted: () => void }) {
       </label>
       {error && <div className="auth-form-error">{error}</div>}
       <button type="submit" className="auth-submit" disabled={submitting}>
-        {submitting ? "Submitting…" : "Request Access"}
+        {submitting ? "Creating account…" : "Create Account"}
       </button>
+      <p className="auth-form-hint">Your account is created right away, but locked until we grant access.</p>
     </form>
   );
 }

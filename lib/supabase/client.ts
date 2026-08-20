@@ -36,22 +36,26 @@ export interface AccessRequestRow {
   phone: string | null;
   message: string | null;
   status: string;
+  user_id: string | null;
 }
 
-export type SubscriptionStatus = "active" | "expired" | "unlimited";
+export type SubscriptionStatus = "active" | "expired" | "pending" | "unlimited";
 
 // Test/trial accounts (the ones provisioned before subscription
 // enforcement went live) have no row in `subscriptions` at all — those
 // stay "unlimited" (never blocked) until an admin explicitly renews or
-// force-expires them from the Accounts tab. The admin account itself is
+// force-expires them from the Accounts tab. Self-signup accounts always
+// get a row with approved=false ("pending") until an admin renews them,
+// which is also how access gets granted. The admin account itself is
 // always exempt regardless of any row, checked by the caller before
 // calling this.
 export async function checkSubscriptionStatus(userId: string): Promise<SubscriptionStatus> {
   const { data } = await supabase
     .from("subscriptions")
-    .select("expires_at")
+    .select("expires_at, approved")
     .eq("user_id", userId)
     .maybeSingle();
   if (!data) return "unlimited";
+  if (!data.approved) return "pending";
   return new Date(data.expires_at).getTime() > Date.now() ? "active" : "expired";
 }
