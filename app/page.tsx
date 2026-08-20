@@ -22,6 +22,9 @@ import FormLayoutEditorGrid from "@/components/FormLayoutEditorGrid";
 import InspectionGroupGrid from "@/components/InspectionGroupGrid";
 import RefDocumentGrid from "@/components/RefDocumentGrid";
 import FlatGrid, { type FlatGridColumnMeta } from "@/components/FlatGrid";
+import AuthModal from "@/components/AuthModal";
+import { supabase } from "@/lib/supabase/client";
+import type { Session } from "@supabase/supabase-js";
 import {
   createDepartmentTypeNode,
   deleteDepartmentType,
@@ -1565,6 +1568,22 @@ export default function Home() {
   const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const gridRef = useRef<GridHandle>(null);
   const agencyDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
+  const [authChecked, setAuthChecked] = useState(false);
+  const [authModalOpen, setAuthModalOpen] = useState(false);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session);
+      setAuthChecked(true);
+    });
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, newSession) => {
+      setSession(newSession);
+    });
+    return () => subscription.unsubscribe();
+  }, []);
 
   useEffect(() => {
     const stored = localStorage.getItem(THEME_STORAGE_KEY);
@@ -2049,7 +2068,7 @@ export default function Home() {
             accept=".zip"
             multiple
             onChange={handleFileChange}
-            disabled={loading}
+            disabled={loading || !session}
           />
         </label>
 
@@ -2093,7 +2112,13 @@ export default function Home() {
         )}
 
         {/* 5 */}
-        <select className="select" value="" onChange={handleNewFile} aria-label="Start a new file">
+        <select
+          className="select"
+          value=""
+          onChange={handleNewFile}
+          aria-label="Start a new file"
+          disabled={!session}
+        >
           <option value="" disabled hidden>
             Start new file
           </option>
@@ -2130,11 +2155,26 @@ export default function Home() {
         <button
           className="btn btn-primary"
           onClick={handleExport}
-          disabled={!zipResult || exporting || undecidedSensitive.length > 0}
+          disabled={!zipResult || exporting || undecidedSensitive.length > 0 || !session}
         >
           {exporting ? "Building zip…" : "Export .zip"}
         </button>
+
+        {/* 7 */}
+        {session ? (
+          <button className="btn" style={{ flexShrink: 0 }} onClick={() => supabase.auth.signOut()}>
+            Logout
+          </button>
+        ) : (
+          <button className="btn" style={{ flexShrink: 0 }} onClick={() => setAuthModalOpen(true)}>
+            Login
+          </button>
+        )}
       </div>
+
+      {authModalOpen && (
+        <AuthModal onClose={() => setAuthModalOpen(false)} onSignedIn={() => setAuthModalOpen(false)} />
+      )}
 
       {undecidedSensitive.length > 0 && (
         <div className="sensitive-gate">
@@ -2191,7 +2231,13 @@ export default function Home() {
       {error && <div className="error-banner">{error}</div>}
 
       <div className="main-area">
-        {activeEntry ? (
+        {!session ? (
+          <div className="main-empty">
+            {authChecked
+              ? "Sign in to use ImportEase — click “Login” above. No account? Use “Request Access”."
+              : "Checking sign-in status…"}
+          </div>
+        ) : activeEntry ? (
           activeEntry.kind === "standardChoice" ? (
             <StandardChoiceGrid
               key={activeEntry.path}

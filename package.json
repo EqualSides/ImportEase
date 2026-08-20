@@ -10,6 +10,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2",
     "ag-grid-community": "^32.3.0",
     "ag-grid-react": "^32.3.0",
     "fast-xml-parser": "^4",
