@@ -108,6 +108,7 @@ function AccountsTab() {
   const [accounts, setAccounts] = useState<AccountRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
+  const [bulkExpiring, setBulkExpiring] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -125,11 +126,49 @@ function AccountsTab() {
     load();
   }, []);
 
+  // Test accounts have no subscriptions row at all, so they read as "no
+  // expiration" rather than "expired" or "active" (see
+  // checkSubscriptionStatus in lib/supabase/client.ts). Going live means
+  // every one of those needs an actual expiration date — this is the
+  // one-click way to force that instead of clicking "Force Expire" on
+  // each account individually and risking missing one.
+  const testAccounts = accounts.filter((a) => !a.expires_at);
+
+  const forceExpireAll = async () => {
+    if (
+      !confirm(
+        `Force-expire all ${testAccounts.length} test account(s) (${testAccounts
+          .map((a) => a.email.split("@")[0])
+          .join(", ")})? This immediately blocks their sign-in.`
+      )
+    ) {
+      return;
+    }
+    setBulkExpiring(true);
+    for (const a of testAccounts) {
+      await invokeAdminFunction("admin-create-account", {
+        username: a.email.split("@")[0],
+        action: "forceExpire",
+      });
+    }
+    setBulkExpiring(false);
+    load();
+  };
+
   if (loading) return <p className="auth-form-hint">Loading…</p>;
   if (listError) return <div className="auth-form-error">{listError}</div>;
 
   return (
     <div className="admin-request-list">
+      {testAccounts.length > 0 && (
+        <div className="admin-panel-header">
+          <button className="btn btn-danger" disabled={bulkExpiring} onClick={forceExpireAll}>
+            {bulkExpiring
+              ? "Expiring…"
+              : `Force Expire All Test Accounts (${testAccounts.length})`}
+          </button>
+        </div>
+      )}
       {accounts.map((a) => (
         <AccountRowItem key={a.id} account={a} onChanged={load} />
       ))}
