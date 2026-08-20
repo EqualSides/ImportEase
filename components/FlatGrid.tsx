@@ -278,5 +278,3 @@ const FlatGrid = forwardRef<FlatGridHandle, Props>(function FlatGrid(
 });
 
 export default FlatGrid;
-
-export default FlatGrid;
