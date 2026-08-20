@@ -35,6 +35,21 @@ import {
   parseEmailMessageXml,
 } from "../xml/emailMessage";
 import { buildExportedSequenceXml, isSequenceXml, parseSequenceXml } from "../xml/sequence";
+import {
+  buildExportedCheckListGroupXml,
+  isCheckListGroupXml,
+  parseCheckListGroupXml,
+} from "../xml/checklistGroup";
+import {
+  buildExportedApplicationStatusGroupXml,
+  isApplicationStatusGroupXml,
+  parseApplicationStatusGroupXml,
+} from "../xml/applicationStatusGroup";
+import {
+  buildExportedCommentGroupXml,
+  isCommentGroupXml,
+  parseCommentGroupXml,
+} from "../xml/commentGroup";
 import type { ParseZipResult, ZipEntryData } from "../types";
 
 /**
@@ -61,6 +76,13 @@ const DETECTORS: {
   { kind: "referenceMask", sniff: isReferenceMaskXml, parse: parseReferenceMaskXml },
   { kind: "emailMessage", sniff: isEmailMessageXml, parse: parseEmailMessageXml },
   { kind: "sequence", sniff: isSequenceXml, parse: parseSequenceXml },
+  { kind: "checklistGroup", sniff: isCheckListGroupXml, parse: parseCheckListGroupXml },
+  {
+    kind: "applicationStatusGroup",
+    sniff: isApplicationStatusGroupXml,
+    parse: parseApplicationStatusGroupXml,
+  },
+  { kind: "commentGroup", sniff: isCommentGroupXml, parse: parseCommentGroupXml },
 ];
 
 export async function parseUploadedZip(
@@ -147,6 +169,24 @@ export async function buildExportZip(entries: ZipEntryData[]): Promise<Uint8Arra
       zip.file(
         entry.path,
         buildExportedSequenceXml({ listAttrs: entry.listAttrs, records: entry.records })
+      );
+    } else if (entry.kind === "checklistGroup") {
+      zip.file(
+        entry.path,
+        buildExportedCheckListGroupXml({ listAttrs: entry.listAttrs, records: entry.records })
+      );
+    } else if (entry.kind === "applicationStatusGroup") {
+      zip.file(
+        entry.path,
+        buildExportedApplicationStatusGroupXml({
+          listAttrs: entry.listAttrs,
+          records: entry.records,
+        })
+      );
+    } else if (entry.kind === "commentGroup") {
+      zip.file(
+        entry.path,
+        buildExportedCommentGroupXml({ listAttrs: entry.listAttrs, records: entry.records })
       );
     } else {
       zip.file(entry.path, entry.bytes);

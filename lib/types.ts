@@ -56,6 +56,27 @@ export interface SequenceZipEntry {
   records: PNode[];
 }
 
+export interface CheckListGroupZipEntry {
+  path: string;
+  kind: "checklistGroup";
+  listAttrs: ListAttrs;
+  records: PNode[];
+}
+
+export interface ApplicationStatusGroupZipEntry {
+  path: string;
+  kind: "applicationStatusGroup";
+  listAttrs: ListAttrs;
+  records: PNode[];
+}
+
+export interface CommentGroupZipEntry {
+  path: string;
+  kind: "commentGroup";
+  listAttrs: ListAttrs;
+  records: PNode[];
+}
+
 export interface PassthroughZipEntry {
   path: string;
   kind: "passthrough";
@@ -75,6 +96,9 @@ export type ZipEntryData =
   | ReferenceMaskZipEntry
   | EmailMessageZipEntry
   | SequenceZipEntry
+  | CheckListGroupZipEntry
+  | ApplicationStatusGroupZipEntry
+  | CommentGroupZipEntry
   | PassthroughZipEntry;
 
 export interface ParseZipResult {

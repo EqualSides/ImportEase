@@ -5,6 +5,9 @@ import StandardChoiceGrid from "@/components/StandardChoiceGrid";
 import SharedDropDownGrid from "@/components/SharedDropDownGrid";
 import RefAddressTypeGroupGrid from "@/components/RefAddressTypeGroupGrid";
 import SequenceGrid from "@/components/SequenceGrid";
+import CheckListGroupGrid from "@/components/CheckListGroupGrid";
+import ApplicationStatusGroupGrid from "@/components/ApplicationStatusGroupGrid";
+import CommentGroupGrid from "@/components/CommentGroupGrid";
 import FlatGrid, { type FlatGridColumnMeta } from "@/components/FlatGrid";
 import {
   getStandardChoiceValueNodes,
@@ -66,9 +69,30 @@ import {
   toSequenceIntervalRow,
   toSequenceRow,
 } from "@/lib/xml/sequence";
+import {
+  getGuideSheetGroupNodes,
+  inferCommonAgencyId as inferCommonAgencyIdCheckListGroup,
+  toCheckListGroupRow,
+  toGuideSheetGroupRow,
+} from "@/lib/xml/checklistGroup";
+import {
+  getAppStatusGroupModelNodes,
+  inferCommonAgencyId as inferCommonAgencyIdApplicationStatusGroup,
+  toApplicationStatusGroupRow,
+  toAppStatusGroupModelRow,
+} from "@/lib/xml/applicationStatusGroup";
+import {
+  getStandardCommentModelNodes,
+  inferCommonAgencyId as inferCommonAgencyIdCommentGroup,
+  toCommentGroupRow,
+  toStandardCommentModelRow,
+} from "@/lib/xml/commentGroup";
 import { detectSensitiveEntries } from "@/lib/sensitiveFiles";
 import { exportZipInWorker, parseZipInWorker } from "@/lib/worker/client";
 import type {
+  ApplicationStatusGroupZipEntry,
+  CheckListGroupZipEntry,
+  CommentGroupZipEntry,
   EmailMessageZipEntry,
   InspRelateInspZipEntry,
   OrganizationAgencyZipEntry,
@@ -96,7 +120,10 @@ type EditableZipEntry =
   | RefAddressTypeGroupZipEntry
   | ReferenceMaskZipEntry
   | EmailMessageZipEntry
-  | SequenceZipEntry;
+  | SequenceZipEntry
+  | CheckListGroupZipEntry
+  | ApplicationStatusGroupZipEntry
+  | CommentGroupZipEntry;
 
 function isEditableEntry(entry: ZipEntryData): entry is EditableZipEntry {
   return (
@@ -107,7 +134,10 @@ function isEditableEntry(entry: ZipEntryData): entry is EditableZipEntry {
     entry.kind === "refAddressTypeGroup" ||
     entry.kind === "referenceMask" ||
     entry.kind === "emailMessage" ||
-    entry.kind === "sequence"
+    entry.kind === "sequence" ||
+    entry.kind === "checklistGroup" ||
+    entry.kind === "applicationStatusGroup" ||
+    entry.kind === "commentGroup"
   );
 }
 
@@ -131,6 +161,14 @@ function inferAgencyIdForEntry(entry: EditableZipEntry): string {
       return inferCommonAgencyIdEmailMessage(entry.records.map(toEmailMessageRow));
     case "sequence":
       return inferCommonAgencyIdSequence(entry.records.map(toSequenceRow));
+    case "checklistGroup":
+      return inferCommonAgencyIdCheckListGroup(entry.records.map(toCheckListGroupRow));
+    case "applicationStatusGroup":
+      return inferCommonAgencyIdApplicationStatusGroup(
+        entry.records.map(toApplicationStatusGroupRow)
+      );
+    case "commentGroup":
+      return inferCommonAgencyIdCommentGroup(entry.records.map(toCommentGroupRow));
   }
 }
 
@@ -152,7 +190,7 @@ const CATEGORY_OPTIONS: { value: string; label: string; available: boolean }[] =
   { value: "rapoTemplate", label: "RAPO Template", available: false },
   { value: "timeGroup", label: "Time Group", available: false },
   { value: "timeTypes", label: "Time Types", available: false },
-  { value: "checklistGroup", label: "Checklist Group", available: false },
+  { value: "checklistGroup", label: "Checklist Group", available: true },
   { value: "referenceMask", label: "Reference Mask", available: true },
   { value: "refLookupTable", label: "Ref Lookup Table", available: false },
   { value: "emailMessage", label: "Email Message", available: true },
@@ -161,9 +199,9 @@ const CATEGORY_OPTIONS: { value: string; label: string; available: boolean }[] =
   { value: "departmentType", label: "Department Type", available: false },
   { value: "user", label: "User", available: false },
   { value: "refInspectionResultGroup", label: "Ref Inspection Result Group", available: false },
-  { value: "commentGroup", label: "Comment Group", available: false },
+  { value: "commentGroup", label: "Comment Group", available: true },
   { value: "sequence", label: "Sequence", available: true },
-  { value: "applicationStatusGroup", label: "Application Status Group", available: false },
+  { value: "applicationStatusGroup", label: "Application Status Group", available: true },
   { value: "refCalendar", label: "Ref Calendar", available: false },
   { value: "inspectionGroup", label: "Inspection Group", available: false },
   { value: "refDocument", label: "Ref Document", available: false },
@@ -382,6 +420,51 @@ function makeBlankSequenceEntry(): SequenceZipEntry {
   };
 }
 
+function makeBlankCheckListGroupEntry(): CheckListGroupZipEntry {
+  return {
+    path: "CheckListGroupModel.xml",
+    kind: "checklistGroup",
+    listAttrs: {
+      version: "9.0.0",
+      minorVersion: "26",
+      exportUser: "",
+      exportDateTime: "",
+      description: "null",
+    },
+    records: [],
+  };
+}
+
+function makeBlankApplicationStatusGroupEntry(): ApplicationStatusGroupZipEntry {
+  return {
+    path: "ApplicationStatusGroupModel.xml",
+    kind: "applicationStatusGroup",
+    listAttrs: {
+      version: "9.0.0",
+      minorVersion: "26",
+      exportUser: "",
+      exportDateTime: "",
+      description: "null",
+    },
+    records: [],
+  };
+}
+
+function makeBlankCommentGroupEntry(): CommentGroupZipEntry {
+  return {
+    path: "CommentGroupModel.xml",
+    kind: "commentGroup",
+    listAttrs: {
+      version: "9.0.0",
+      minorVersion: "26",
+      exportUser: "",
+      exportDateTime: "",
+      description: "null",
+    },
+    records: [],
+  };
+}
+
 function validateReferenceMaskEntries(entries: ReferenceMaskZipEntry[]): string | null {
   for (const entry of entries) {
     for (const record of entry.records) {
@@ -417,6 +500,62 @@ function validateSequenceEntries(entries: SequenceZipEntry[]): string | null {
         const intervalRow = toSequenceIntervalRow(intervalNode);
         if (!intervalRow.intervalName.trim()) {
           return `"${entry.path}" — "${row.name}" has an interval with no Interval Name set — every interval needs one before export.`;
+        }
+      }
+    }
+  }
+  return null;
+}
+
+function validateCheckListGroupEntries(entries: CheckListGroupZipEntry[]): string | null {
+  for (const entry of entries) {
+    for (const record of entry.records) {
+      const row = toCheckListGroupRow(record);
+      if (!row.guideGroup.trim()) {
+        return `"${entry.path}" has a Checklist Group with no Guide Group set — every group needs a Guide Group before export.`;
+      }
+      for (const typeNode of getGuideSheetGroupNodes(record)) {
+        const typeRow = toGuideSheetGroupRow(typeNode);
+        if (!typeRow.guideType.trim()) {
+          return `"${entry.path}" — "${row.guideGroup}" has a guide type with no Guide Type set — every type needs one before export.`;
+        }
+      }
+    }
+  }
+  return null;
+}
+
+function validateApplicationStatusGroupEntries(
+  entries: ApplicationStatusGroupZipEntry[]
+): string | null {
+  for (const entry of entries) {
+    for (const record of entry.records) {
+      const row = toApplicationStatusGroupRow(record);
+      if (!row.appStatusGroupCode.trim()) {
+        return `"${entry.path}" has an Application Status Group with no Group Code set — every group needs a Group Code before export.`;
+      }
+      for (const statusNode of getAppStatusGroupModelNodes(record)) {
+        const statusRow = toAppStatusGroupModelRow(statusNode);
+        if (!statusRow.status.trim()) {
+          return `"${entry.path}" — "${row.appStatusGroupCode}" has a status with no Status set — every status needs one before export.`;
+        }
+      }
+    }
+  }
+  return null;
+}
+
+function validateCommentGroupEntries(entries: CommentGroupZipEntry[]): string | null {
+  for (const entry of entries) {
+    for (const record of entry.records) {
+      const row = toCommentGroupRow(record);
+      if (!row.commentType.trim()) {
+        return `"${entry.path}" has a Comment Group with no Comment Type set — every group needs a Comment Type before export.`;
+      }
+      for (const commentNode of getStandardCommentModelNodes(record)) {
+        const commentRow = toStandardCommentModelRow(commentNode);
+        if (!commentRow.commentName.trim()) {
+          return `"${entry.path}" — "${row.commentType}" has a comment with no Comment Name set — every comment needs one before export.`;
         }
       }
     }
@@ -667,7 +806,13 @@ export default function Home() {
                       ? makeBlankEmailMessageEntry()
                       : category === "sequence"
                         ? makeBlankSequenceEntry()
-                        : null;
+                        : category === "checklistGroup"
+                          ? makeBlankCheckListGroupEntry()
+                          : category === "applicationStatusGroup"
+                            ? makeBlankApplicationStatusGroupEntry()
+                            : category === "commentGroup"
+                              ? makeBlankCommentGroupEntry()
+                              : null;
       if (!blankEntry) return;
       if (
         zipResult &&
@@ -724,6 +869,15 @@ export default function Home() {
   const sequenceEntries = editableEntries.filter(
     (en): en is SequenceZipEntry => en.kind === "sequence"
   );
+  const checklistGroupEntries = editableEntries.filter(
+    (en): en is CheckListGroupZipEntry => en.kind === "checklistGroup"
+  );
+  const applicationStatusGroupEntries = editableEntries.filter(
+    (en): en is ApplicationStatusGroupZipEntry => en.kind === "applicationStatusGroup"
+  );
+  const commentGroupEntries = editableEntries.filter(
+    (en): en is CommentGroupZipEntry => en.kind === "commentGroup"
+  );
 
   const sensitiveMatches = zipResult
     ? detectSensitiveEntries(zipResult.entries.map((en) => en.path))
@@ -752,7 +906,10 @@ export default function Home() {
       validateRefAddressTypeGroupEntries(refAddressTypeGroupEntries) ??
       validateReferenceMaskEntries(referenceMaskEntries) ??
       validateEmailMessageEntries(emailMessageEntries) ??
-      validateSequenceEntries(sequenceEntries);
+      validateSequenceEntries(sequenceEntries) ??
+      validateCheckListGroupEntries(checklistGroupEntries) ??
+      validateApplicationStatusGroupEntries(applicationStatusGroupEntries) ??
+      validateCommentGroupEntries(commentGroupEntries);
     if (validationError) {
       setError(validationError);
       return;
@@ -805,6 +962,9 @@ export default function Home() {
     referenceMaskEntries,
     emailMessageEntries,
     sequenceEntries,
+    checklistGroupEntries,
+    applicationStatusGroupEntries,
+    commentGroupEntries,
   ]);
 
   // Cascading on every keystroke would be wasteful (it touches every
@@ -1126,8 +1286,35 @@ export default function Home() {
               toolbarLabel="Email Message"
               addButtonLabel="+ Add Message"
             />
-          ) : (
+          ) : activeEntry.kind === "sequence" ? (
             <SequenceGrid
+              key={activeEntry.path}
+              ref={gridRef}
+              records={activeEntry.records}
+              onChange={handleDataChange}
+              gridThemeClass={gridThemeClass}
+              agencyId={agencyId}
+            />
+          ) : activeEntry.kind === "checklistGroup" ? (
+            <CheckListGroupGrid
+              key={activeEntry.path}
+              ref={gridRef}
+              records={activeEntry.records}
+              onChange={handleDataChange}
+              gridThemeClass={gridThemeClass}
+              agencyId={agencyId}
+            />
+          ) : activeEntry.kind === "applicationStatusGroup" ? (
+            <ApplicationStatusGroupGrid
+              key={activeEntry.path}
+              ref={gridRef}
+              records={activeEntry.records}
+              onChange={handleDataChange}
+              gridThemeClass={gridThemeClass}
+              agencyId={agencyId}
+            />
+          ) : (
+            <CommentGroupGrid
               key={activeEntry.path}
               ref={gridRef}
               records={activeEntry.records}
