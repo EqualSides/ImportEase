@@ -406,6 +406,15 @@ const THEME_STORAGE_KEY = "importease-theme";
 // view/pass-through only, never editable — see architecture-and-safety-
 // update.md) are intentionally excluded, since neither is ever a "start
 // blank and fill in" target.
+//
+// User/User Profiles stay available:false by explicit user decision, not
+// a technical gap: unlike every other flagged category (which embeds
+// security *references*), these files carry the actual credential-tier
+// data itself — real hashed passwords and login metadata — and building
+// an editable grid for that is a materially different call than the
+// "embedded" sensitivity tier in lib/sensitiveFiles.ts. ACA Configuration,
+// Agency Group, and Ref Calendar remain false for the data/architecture
+// reasons documented at each of their DETECTORS/module call sites.
 const CATEGORY_OPTIONS: { value: string; label: string; available: boolean }[] = [
   { value: "acaConfiguration", label: "ACA Configuration", available: false },
   { value: "agencyGroup", label: "Agency Group", available: false },
