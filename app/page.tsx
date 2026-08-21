@@ -1999,6 +1999,14 @@ export default function Home() {
     (en): en is ExpressionBuilderZipEntry => en.kind === "expressionBuilder"
   );
 
+  // The "Start new file" dropdown's option list: the full category list
+  // with nothing loaded, narrowed to only the categories already open as
+  // tabs once a zip is loaded — see handleNewFile, which never creates a
+  // new entry in that case, only switches which open tab(s) survive.
+  const openCategoryOptions = zipResult
+    ? CATEGORY_OPTIONS.filter((c) => editableEntries.some((en) => en.kind === c.value))
+    : CATEGORY_OPTIONS;
+
   const sensitiveMatches = zipResult
     ? detectSensitiveEntries(zipResult.entries.map((en) => en.path))
     : [];
@@ -2067,40 +2075,39 @@ export default function Home() {
     });
   }, []);
 
-  // With nothing loaded yet, "Start new file" just opens a blank file of
-  // the chosen category, as before. Once a zip IS loaded, picking a
-  // category instead adds a blank entry of that type alongside whatever's
-  // already there and drops every other active tab — same 6-second
-  // Undo countdown as clicking a tab's own ×, not an instant/silent
-  // delete, and not a confirm() dialog either (rejected earlier for the
-  // same "many clicks" reason that shaped that Undo flow). Existing tabs
-  // of the category just picked are left alone.
+  // With nothing loaded yet, this dropdown starts a genuinely blank file of
+  // the chosen category, as before — its options are the full category
+  // list. Once a zip IS loaded, its options narrow to only the categories
+  // that already exist among the open tabs (see openCategoryOptions below)
+  // — picking one never creates anything new, it just drops every other
+  // active tab, the same 6-second Undo countdown as clicking a tab's own ×
+  // (not an instant/silent delete, and not a confirm() dialog either —
+  // rejected earlier for the same "many clicks" reason that shaped that
+  // Undo flow).
   const handleNewFile = useCallback(
     (e: React.ChangeEvent<HTMLSelectElement>) => {
       const category = e.target.value;
       e.target.value = "";
-      const blankEntry = makeBlankEntryForCategory(category);
-      if (!blankEntry) return;
-      setError(null);
 
       if (!zipResult) {
+        const blankEntry = makeBlankEntryForCategory(category);
+        if (!blankEntry) return;
+        setError(null);
         loadEntries({ zipName: "new-export.zip", entries: [blankEntry] });
         return;
       }
 
+      const kept = editableEntries.filter((en) => en.kind === category);
+      if (kept.length === 0) return;
+      setError(null);
       for (const en of editableEntries) {
         if (en.kind !== category) startEntryRemoval(en.path);
       }
-      const merged = mergeParseResults(zipResult, {
-        zipName: zipResult.zipName,
-        entries: [blankEntry],
-      });
-      const addedEntry = merged.entries[merged.entries.length - 1] as EditableZipEntry;
-      setZipResult(merged);
-      setActivePath(addedEntry.path);
-      setAgencyId(inferAgencyIdForEntry(addedEntry));
+      const current = kept.find((en) => en.path === activePath) ?? kept[0];
+      setActivePath(current.path);
+      setAgencyId(inferAgencyIdForEntry(current));
     },
-    [zipResult, loadEntries, editableEntries, startEntryRemoval]
+    [zipResult, loadEntries, editableEntries, activePath, startEntryRemoval]
   );
 
   const decideSensitive = useCallback((path: string, decision: "keep" | "remove") => {
@@ -2348,13 +2355,13 @@ export default function Home() {
           className="select"
           value=""
           onChange={handleNewFile}
-          aria-label="Start a new file"
-          disabled={!session || !!accessBlockedReason}
+          aria-label={zipResult ? "Keep only this open category" : "Start a new file"}
+          disabled={!session || !!accessBlockedReason || (!!zipResult && openCategoryOptions.length < 2)}
         >
           <option value="" disabled hidden>
-            Start new file
+            {zipResult ? "Keep only…" : "Start new file"}
           </option>
-          {CATEGORY_OPTIONS.map((c) => (
+          {openCategoryOptions.map((c) => (
             <option key={c.value} value={c.value}>
               {c.label}
             </option>
