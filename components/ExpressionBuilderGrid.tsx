@@ -77,10 +77,10 @@ const EXPRESSION_COLUMN_META: ColumnMeta[] = [
   { field: "executeIn", headerName: "Execute In", editable: true, hide: true },
   { field: "executeOrder", headerName: "Execute Order", editable: true, hide: true },
   { field: "expressionBehavior", headerName: "Behavior", editable: true, hide: true },
-  { field: "expressionMode", headerName: "Mode", editable: true, hide: true },
+  { field: "expressionMode", headerName: "Mode", editable: true },
   { field: "expressionVersion", headerName: "Version", editable: true, hide: true },
   { field: "viewID", headerName: "View ID", editable: true, hide: true },
-  { field: "scriptText", headerName: "Script Text", editable: true, hide: true },
+  { field: "scriptText", headerName: "Script Text", editable: true },
   { field: "calcCount", headerName: "# Calculations", editable: false },
   { field: "criteriaCount", headerName: "# Criteria", editable: false },
   { field: "fieldCount", headerName: "# Fields", editable: false },
@@ -89,7 +89,7 @@ const EXPRESSION_COLUMN_META: ColumnMeta[] = [
 const CALC_COLUMN_META: ColumnMeta[] = [
   { field: "fieldName", headerName: "Field Name", editable: true },
   { field: "fieldPropterty", headerName: "Field Property", editable: true, hide: true },
-  { field: "calculateExp", headerName: "Calculate Expression", editable: true, hide: true },
+  { field: "calculateExp", headerName: "Calculate Expression", editable: true },
   { field: "calSeq", headerName: "Sequence", editable: true, hide: true },
   { field: "expressionName", headerName: "Expression Name", editable: false, hide: true },
   { field: "serviceProviderCode", headerName: "Agency ID", editable: true, hide: true },
@@ -97,8 +97,8 @@ const CALC_COLUMN_META: ColumnMeta[] = [
 
 const CRITERIA_COLUMN_META: ColumnMeta[] = [
   { field: "fieldName", headerName: "Field Name", editable: true },
-  { field: "fieldOperator", headerName: "Operator", editable: true, hide: true },
-  { field: "criteriaValue", headerName: "Value", editable: true, hide: true },
+  { field: "fieldOperator", headerName: "Operator", editable: true },
+  { field: "criteriaValue", headerName: "Value", editable: true },
   { field: "criteriaType", headerName: "Criteria Type", editable: true, hide: true },
   { field: "booleanOperator", headerName: "Boolean Operator", editable: true, hide: true },
   { field: "criteriaSeq", headerName: "Sequence", editable: true, hide: true },

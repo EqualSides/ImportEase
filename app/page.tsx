@@ -1626,10 +1626,15 @@ const CONDITIONS_COLUMNS: FlatGridColumnMeta[] = [
 
 export default function Home() {
   const [zipResult, setZipResult] = useState<ParseZipResult | null>(null);
-  const [recentlyRemoved, setRecentlyRemoved] = useState<{ entry: ZipEntryData; index: number } | null>(
-    null
-  );
-  const undoRemoveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // path -> removal deadline (epoch ms). The entry stays in zipResult and
+  // in this tab bar the whole time — nothing is actually removed from data
+  // until its own timer expires, so "undo" during the window is just
+  // deleting the path from this map, no restore logic needed.
+  const [pendingRemovals, setPendingRemovals] = useState<Record<string, number>>({});
+  const [, forceRemovalCountdownTick] = useState(0);
+  const removalTickIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const activePathRef = useRef<string | null>(null);
+  const editableEntriesRef = useRef<EditableZipEntry[]>([]);
   const [activePath, setActivePath] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -1654,9 +1659,19 @@ export default function Home() {
   const [accessBlockedReason, setAccessBlockedReason] = useState<"expired" | "pending" | null>(null);
   const [subscriptionExpiresAt, setSubscriptionExpiresAt] = useState<string | null>(null);
 
+  // Interval callbacks close over stale state, so these track the latest
+  // values without needing the interval itself to be torn down and
+  // recreated on every activePath/editableEntries change.
+  useEffect(() => {
+    activePathRef.current = activePath;
+  });
+  useEffect(() => {
+    editableEntriesRef.current = editableEntries;
+  });
+
   useEffect(() => {
     return () => {
-      if (undoRemoveTimerRef.current) clearTimeout(undoRemoveTimerRef.current);
+      if (removalTickIntervalRef.current) clearInterval(removalTickIntervalRef.current);
     };
   }, []);
 
@@ -2010,51 +2025,62 @@ export default function Home() {
   // zipResult so it's gone from both the tab bar and the export.
   //
   // No confirm() dialog: for the "keep 1 of 12" case that would mean
-  // clicking through 11 confirmations. Instead removal is instant and
-  // a brief Undo banner (recentlyRemoved) covers the case where × got
-  // clicked by mistake — one click to put it right back, no re-upload
-  // needed, without adding friction to every deliberate removal.
-  const removeEntryType = useCallback(
+  // clicking through 11 confirmations. Instead the tab itself turns into
+  // a 6-second "Undo Ns" countdown (pendingRemovals) — the entry stays in
+  // zipResult the whole time, so undoing during the window is just
+  // dropping the path from this map; only once the countdown actually
+  // reaches 0 does the entry get spliced out for real.
+  const finalizeEntryRemoval = useCallback((path: string) => {
+    setZipResult((prev) =>
+      prev ? { ...prev, entries: prev.entries.filter((en) => en.path !== path) } : prev
+    );
+    if (activePathRef.current === path) {
+      const remaining = editableEntriesRef.current.filter((en) => en.path !== path);
+      const next = remaining[0] ?? null;
+      setActivePath(next?.path ?? null);
+      setAgencyId(next ? inferAgencyIdForEntry(next) : "");
+    }
+  }, []);
+
+  const startEntryRemoval = useCallback(
     (path: string) => {
-      if (!zipResult) return;
-      const index = zipResult.entries.findIndex((en) => en.path === path);
-      if (index === -1) return;
-      const entry = zipResult.entries[index];
-      setZipResult((prev) =>
-        prev ? { ...prev, entries: prev.entries.filter((en) => en.path !== path) } : prev
-      );
-      if (activePath === path) {
-        const remaining = editableEntries.filter((en) => en.path !== path);
-        const next = remaining[0] ?? null;
-        setActivePath(next?.path ?? null);
-        setAgencyId(next ? inferAgencyIdForEntry(next) : "");
+      setPendingRemovals((prev) => ({ ...prev, [path]: Date.now() + 6000 }));
+      if (!removalTickIntervalRef.current) {
+        removalTickIntervalRef.current = setInterval(() => {
+          const now = Date.now();
+          setPendingRemovals((prev) => {
+            const expired = Object.entries(prev).filter(([, deadline]) => deadline <= now);
+            if (expired.length === 0) return prev;
+            const next = { ...prev };
+            for (const [path] of expired) {
+              delete next[path];
+              finalizeEntryRemoval(path);
+            }
+            if (Object.keys(next).length === 0 && removalTickIntervalRef.current) {
+              clearInterval(removalTickIntervalRef.current);
+              removalTickIntervalRef.current = null;
+            }
+            return next;
+          });
+          forceRemovalCountdownTick((t) => t + 1);
+        }, 1000);
       }
-      if (undoRemoveTimerRef.current) clearTimeout(undoRemoveTimerRef.current);
-      setRecentlyRemoved({ entry, index });
-      undoRemoveTimerRef.current = setTimeout(() => setRecentlyRemoved(null), 8000);
     },
-    [zipResult, activePath, editableEntries]
+    [finalizeEntryRemoval]
   );
 
-  const undoRemoveEntryType = useCallback(() => {
-    if (!recentlyRemoved) return;
-    if (undoRemoveTimerRef.current) {
-      clearTimeout(undoRemoveTimerRef.current);
-      undoRemoveTimerRef.current = null;
-    }
-    const { entry, index } = recentlyRemoved;
-    setZipResult((prev) => {
-      if (!prev) return prev;
-      const entries = [...prev.entries];
-      entries.splice(Math.min(index, entries.length), 0, entry);
-      return { ...prev, entries };
+  const cancelEntryRemoval = useCallback((path: string) => {
+    setPendingRemovals((prev) => {
+      if (!(path in prev)) return prev;
+      const next = { ...prev };
+      delete next[path];
+      if (Object.keys(next).length === 0 && removalTickIntervalRef.current) {
+        clearInterval(removalTickIntervalRef.current);
+        removalTickIntervalRef.current = null;
+      }
+      return next;
     });
-    if (isEditableEntry(entry)) {
-      setActivePath(entry.path);
-      setAgencyId(inferAgencyIdForEntry(entry));
-    }
-    setRecentlyRemoved(null);
-  }, [recentlyRemoved]);
+  }, []);
 
   const decideSensitive = useCallback((path: string, decision: "keep" | "remove") => {
     setSensitiveDecisions((prev) => ({ ...prev, [path]: decision }));
@@ -2316,42 +2342,45 @@ export default function Home() {
 
         {editableEntries.length > 1 && (
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            {editableEntries.map((en) => (
-              <div key={en.path} style={{ display: "inline-flex", gap: 4 }}>
-                <button
-                  className="btn"
-                  onClick={() => {
-                    setActivePath(en.path);
-                    setAgencyId(inferAgencyIdForEntry(en));
-                  }}
-                  style={
-                    en.path === activePath
-                      ? { borderColor: "var(--accent-cyan-text)", color: "var(--accent-cyan-text)" }
-                      : undefined
-                  }
-                >
-                  {en.path}
-                </button>
-                <button
-                  className="btn icon-btn"
-                  onClick={() => removeEntryType(en.path)}
-                  title={`Remove ${en.path} from this file`}
-                >
-                  ×
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {recentlyRemoved && (
-          <div className="undo-banner">
-            <span>
-              Removed <strong>{recentlyRemoved.entry.path}</strong>.
-            </span>
-            <button className="btn" onClick={undoRemoveEntryType}>
-              Undo
-            </button>
+            {editableEntries.map((en) => {
+              const deadline = pendingRemovals[en.path];
+              const secondsLeft = deadline ? Math.max(1, Math.ceil((deadline - Date.now()) / 1000)) : null;
+              return (
+                <div key={en.path} style={{ display: "inline-flex", gap: 4 }}>
+                  <button
+                    className="btn"
+                    onClick={() => {
+                      setActivePath(en.path);
+                      setAgencyId(inferAgencyIdForEntry(en));
+                    }}
+                    style={
+                      en.path === activePath
+                        ? { borderColor: "var(--accent-cyan-text)", color: "var(--accent-cyan-text)" }
+                        : undefined
+                    }
+                  >
+                    {en.path}
+                  </button>
+                  {secondsLeft !== null ? (
+                    <button
+                      className="btn btn-danger"
+                      onClick={() => cancelEntryRemoval(en.path)}
+                      title="Cancel removal"
+                    >
+                      Undo {secondsLeft}s
+                    </button>
+                  ) : (
+                    <button
+                      className="btn icon-btn"
+                      onClick={() => startEntryRemoval(en.path)}
+                      title={`Remove ${en.path} from this file`}
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
 
