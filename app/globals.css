@@ -920,10 +920,6 @@ body.resizing-panels {
   color: var(--accent-danger-text);
 }
 
-.lint-badge-unused-variable {
-  color: var(--accent-amber-text);
-}
-
 .lint-badge-simplify {
   color: var(--accent-cyan-text);
 }

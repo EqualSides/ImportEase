@@ -6,20 +6,19 @@
  * linter, not a real parser for Accela's expression grammar (which
  * isn't publicly documented), so it only flags patterns that are
  * unambiguous regardless of the exact grammar: unbalanced
- * parens/brackets/quotes, a trailing operator, exact duplicate
- * calculations, and stray whitespace. Variable-usage checking is a
- * plain-text scan (word-boundary where the name allows it, substring
- * otherwise), so a variable referenced only through string
- * concatenation or a naming convention this scan doesn't anticipate
- * could still be flagged as unused — treat "unused" findings as a
- * prompt to double-check, not a guarantee.
+ * parens/brackets/quotes, a trailing operator, and exact duplicate
+ * calculations.
+ *
+ * The Fields arm is deliberately not checked at all (no unused-variable
+ * detection) and whitespace/trimming is never offered as a fix — both
+ * were dropped on explicit user request as more noise than signal.
  */
-import type { ExpressCalculationRow, ExpressCriteriaRow, ExpressFieldRow, ExpressionRow } from "./expressionBuilder";
+import type { ExpressCalculationRow, ExpressCriteriaRow, ExpressionRow } from "./expressionBuilder";
 
-export type LintCategory = "unused-variable" | "syntax-error" | "simplify";
+export type LintCategory = "syntax-error" | "simplify";
 
 export interface LintFix {
-  arm: "expr" | "calc" | "criteria" | "field";
+  arm: "expr" | "calc" | "criteria";
   uid: string;
   field: string;
   newValue: string;
@@ -34,17 +33,13 @@ export interface LintFinding {
   after?: string;
   fix?: LintFix;
   /** Lets the caller offer a "delete this row" action for the given arm. */
-  deletable?: { arm: "calc" | "criteria" | "field"; uid: string };
+  deletable?: { arm: "calc" | "criteria"; uid: string };
 }
 
 function countChar(s: string, ch: string): number {
   let n = 0;
   for (const c of s) if (c === ch) n++;
   return n;
-}
-
-function escapeRegExp(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 const TRAILING_OPERATOR_RE = /(?:&&|\|\||==|!=|<=|>=|[+\-*/<>=])\s*$/;
@@ -136,47 +131,17 @@ function checkBalanceAndTrailing(
   return findings;
 }
 
-function checkWhitespace(
-  text: string,
-  location: string,
-  idPrefix: string,
-  fix: (newValue: string) => LintFix
-): LintFinding[] {
-  const cleaned = text.trim().replace(/[ \t]{2,}/g, " ");
-  if (cleaned !== text && cleaned) {
-    return [
-      {
-        id: `${idPrefix}-whitespace`,
-        category: "simplify",
-        location,
-        message: "Extra or trailing whitespace — safe to collapse.",
-        before: text,
-        after: cleaned,
-        fix: fix(cleaned),
-      },
-    ];
-  }
-  return [];
-}
-
 export function lintExpression(
   exprRow: ExpressionRow,
   calcRows: ExpressCalculationRow[],
-  criteriaRows: ExpressCriteriaRow[],
-  fieldRows: ExpressFieldRow[]
+  criteriaRows: ExpressCriteriaRow[]
 ): LintFinding[] {
   const findings: LintFinding[] = [];
 
-  // --- syntax + whitespace over every code-bearing field --------------
+  // --- syntax over every code-bearing field ------------------------------
   if (exprRow.scriptText.trim()) {
     findings.push(
       ...checkBalanceAndTrailing(exprRow.scriptText, "Script Text", `expr-script`, (v) => ({
-        arm: "expr",
-        uid: exprRow.uid,
-        field: "scriptText",
-        newValue: v,
-      })),
-      ...checkWhitespace(exprRow.scriptText, "Script Text", `expr-script`, (v) => ({
         arm: "expr",
         uid: exprRow.uid,
         field: "scriptText",
@@ -190,12 +155,6 @@ export function lintExpression(
     if (c.calculateExp.trim()) {
       findings.push(
         ...checkBalanceAndTrailing(c.calculateExp, loc, `calc-${c.uid}`, (v) => ({
-          arm: "calc",
-          uid: c.uid,
-          field: "calculateExp",
-          newValue: v,
-        })),
-        ...checkWhitespace(c.calculateExp, loc, `calc-${c.uid}`, (v) => ({
           arm: "calc",
           uid: c.uid,
           field: "calculateExp",
@@ -217,12 +176,6 @@ export function lintExpression(
     if (c.criteriaValue.trim()) {
       findings.push(
         ...checkBalanceAndTrailing(c.criteriaValue, loc, `crit-${c.uid}`, (v) => ({
-          arm: "criteria",
-          uid: c.uid,
-          field: "criteriaValue",
-          newValue: v,
-        })),
-        ...checkWhitespace(c.criteriaValue, loc, `crit-${c.uid}`, (v) => ({
           arm: "criteria",
           uid: c.uid,
           field: "criteriaValue",
@@ -258,31 +211,6 @@ export function lintExpression(
       } else {
         seen.set(exp, c);
       }
-    }
-  }
-
-  // --- unused variables --------------------------------------------------
-  const haystack = [
-    exprRow.scriptText,
-    ...calcRows.flatMap((c) => [c.calculateExp, c.fieldName]),
-    ...criteriaRows.flatMap((c) => [c.criteriaValue, c.fieldName]),
-  ].join("\n");
-
-  for (const f of fieldRows) {
-    const name = f.name.trim() || f.variableKey.trim();
-    if (!name) continue;
-    const isWordLike = /^\w+$/.test(name);
-    const used = isWordLike
-      ? new RegExp(`\\b${escapeRegExp(name)}\\b`).test(haystack)
-      : haystack.includes(name);
-    if (!used) {
-      findings.push({
-        id: `field-${f.uid}-unused`,
-        category: "unused-variable",
-        location: `Field → ${name}`,
-        message: `"${name}" is declared but never referenced in any calculation, criteria, or the script text.`,
-        deletable: { arm: "field", uid: f.uid },
-      });
     }
   }
 

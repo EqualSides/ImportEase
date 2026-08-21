@@ -459,8 +459,7 @@ const ExpressionBuilderGrid = forwardRef<ExpressionBuilderGridHandle, Props>(
       const exprRow = toExpressionRow(selectedExprNode);
       const calc = getArmNodes(selectedExprNode, "calc").map(toExpressCalculationRow);
       const criteria = getArmNodes(selectedExprNode, "criteria").map(toExpressCriteriaRow);
-      const field = getArmNodes(selectedExprNode, "field").map(toExpressFieldRow);
-      setLintFindings(lintExpression(exprRow, calc, criteria, field));
+      setLintFindings(lintExpression(exprRow, calc, criteria));
     }, [selectedExprNode]);
 
     const dismissFinding = useCallback((id: string) => {
@@ -696,11 +695,7 @@ const ExpressionBuilderGrid = forwardRef<ExpressionBuilderGridHandle, Props>(
                     <div key={f.id} className="admin-request-row lint-finding">
                       <div className="lint-finding-header">
                         <span className={`lint-badge lint-badge-${f.category}`}>
-                          {f.category === "unused-variable"
-                            ? "Unused Variable"
-                            : f.category === "syntax-error"
-                              ? "Syntax Error"
-                              : "Simplify"}
+                          {f.category === "syntax-error" ? "Syntax Error" : "Simplify"}
                         </span>
                         <span className="admin-request-meta">{f.location}</span>
                       </div>

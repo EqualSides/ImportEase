@@ -1,11 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { lintExpression } from "../lib/xml/expressionLint";
-import type {
-  ExpressCalculationRow,
-  ExpressCriteriaRow,
-  ExpressFieldRow,
-  ExpressionRow,
-} from "../lib/xml/expressionBuilder";
+import type { ExpressCalculationRow, ExpressCriteriaRow, ExpressionRow } from "../lib/xml/expressionBuilder";
 
 function exprRow(overrides: Partial<ExpressionRow> = {}): ExpressionRow {
   return {
@@ -59,57 +54,24 @@ function criteriaRow(overrides: Partial<ExpressCriteriaRow> = {}): ExpressCriter
   };
 }
 
-function fieldRow(overrides: Partial<ExpressFieldRow> = {}): ExpressFieldRow {
-  return {
-    uid: "f1",
-    serviceProviderCode: "AGY",
-    expressionName: "TEST_EXPR",
-    usage: "VARIABLE",
-    portletId: "",
-    variableKey: "",
-    event: "",
-    isRequired: "N",
-    name: "",
-    label: "",
-    refColName: "",
-    type: "",
-    ...overrides,
-  };
-}
-
 describe("lintExpression", () => {
-  it("finds no issues on a clean, fully-referenced expression", () => {
-    const findings = lintExpression(
-      exprRow(),
-      [calcRow({ fieldName: "TOTAL", calculateExp: "FEE_AMOUNT * 2" })],
-      [],
-      [fieldRow({ uid: "f1", name: "FEE_AMOUNT" })]
-    );
+  it("finds no issues on a clean expression", () => {
+    const findings = lintExpression(exprRow(), [calcRow({ fieldName: "TOTAL", calculateExp: "FEE_AMOUNT * 2" })], []);
     expect(findings).toEqual([]);
   });
 
-  it("flags an unused variable", () => {
-    const findings = lintExpression(exprRow(), [], [], [fieldRow({ uid: "f1", name: "UNUSED_VAR" })]);
-    expect(findings).toHaveLength(1);
-    expect(findings[0].category).toBe("unused-variable");
-    expect(findings[0].deletable).toEqual({ arm: "field", uid: "f1" });
-  });
-
-  it("does not flag a variable referenced inside a calculation", () => {
-    const findings = lintExpression(
-      exprRow(),
-      [calcRow({ fieldName: "TOTAL", calculateExp: "BASE_FEE + 5" })],
-      [],
-      [fieldRow({ uid: "f1", name: "BASE_FEE" })]
-    );
-    expect(findings.some((f) => f.category === "unused-variable")).toBe(false);
+  it("never flags anything about the Fields arm — it isn't checked at all", () => {
+    // lintExpression's signature no longer even accepts field rows; this
+    // just documents the intent so a future change doesn't quietly bring
+    // field-arm checking back in.
+    const findings = lintExpression(exprRow(), [], []);
+    expect(findings).toEqual([]);
   });
 
   it("proposes a fix for a missing closing parenthesis", () => {
     const findings = lintExpression(
       exprRow(),
       [calcRow({ uid: "c1", fieldName: "TOTAL", calculateExp: "(A + B" })],
-      [],
       []
     );
     const paren = findings.find((f) => f.id === "calc-c1-parens");
@@ -122,7 +84,6 @@ describe("lintExpression", () => {
     const findings = lintExpression(
       exprRow(),
       [calcRow({ uid: "c1", fieldName: "TOTAL", calculateExp: "A + B)" })],
-      [],
       []
     );
     const paren = findings.find((f) => f.id === "calc-c1-parens");
@@ -134,7 +95,6 @@ describe("lintExpression", () => {
     const findings = lintExpression(
       exprRow(),
       [calcRow({ uid: "c1", fieldName: "TOTAL", calculateExp: "A + B +" })],
-      [],
       []
     );
     expect(findings.some((f) => f.id === "calc-c1-trailing-op")).toBe(true);
@@ -144,22 +104,18 @@ describe("lintExpression", () => {
     const findings = lintExpression(
       exprRow(),
       [calcRow({ uid: "c1", fieldName: "TOTAL", calculateExp: "A == 'open" })],
-      [],
       []
     );
     expect(findings.some((f) => f.id === "calc-c1-squote")).toBe(true);
   });
 
-  it("proposes collapsing extra whitespace", () => {
+  it("does not flag extra whitespace — not offered as a fix", () => {
     const findings = lintExpression(
       exprRow(),
       [calcRow({ uid: "c1", fieldName: "TOTAL", calculateExp: "A  +   B" })],
-      [],
       []
     );
-    const ws = findings.find((f) => f.id === "calc-c1-whitespace");
-    expect(ws).toBeDefined();
-    expect(ws!.after).toBe("A + B");
+    expect(findings).toEqual([]);
   });
 
   it("flags a duplicate calculation writing the same target field", () => {
@@ -169,7 +125,6 @@ describe("lintExpression", () => {
         calcRow({ uid: "c1", fieldName: "TOTAL", calculateExp: "A + B" }),
         calcRow({ uid: "c2", fieldName: "TOTAL", calculateExp: "A + B" }),
       ],
-      [],
       []
     );
     const dup = findings.find((f) => f.id === "calc-c2-dup");
@@ -185,24 +140,22 @@ describe("lintExpression", () => {
         calcRow({ uid: "c1", fieldName: "TOTAL", calculateExp: "A + B" }),
         calcRow({ uid: "c2", fieldName: "OTHER", calculateExp: "A + B" }),
       ],
-      [],
       []
     );
     expect(findings.some((f) => f.category === "simplify" && f.id.includes("dup"))).toBe(false);
   });
 
   it("flags a calculation row with a target field but no expression", () => {
-    const findings = lintExpression(exprRow(), [calcRow({ uid: "c1", fieldName: "TOTAL", calculateExp: "" })], [], []);
+    const findings = lintExpression(exprRow(), [calcRow({ uid: "c1", fieldName: "TOTAL", calculateExp: "" })], []);
     expect(findings.some((f) => f.id === "calc-c1-empty")).toBe(true);
   });
 
-  it("counts criteria fieldName/value as a use of a declared variable", () => {
+  it("checks criteriaValue for the same syntax issues as calculateExp", () => {
     const findings = lintExpression(
       exprRow(),
       [],
-      [criteriaRow({ fieldName: "STATUS_CODE", criteriaValue: "APPROVED" })],
-      [fieldRow({ uid: "f1", name: "STATUS_CODE" })]
+      [criteriaRow({ uid: "cr1", fieldName: "STATUS_CODE", criteriaValue: "(APPROVED" })]
     );
-    expect(findings.some((f) => f.category === "unused-variable")).toBe(false);
+    expect(findings.some((f) => f.id === "crit-cr1-parens")).toBe(true);
   });
 });
