@@ -1626,6 +1626,14 @@ const CONDITIONS_COLUMNS: FlatGridColumnMeta[] = [
 
 export default function Home() {
   const [zipResult, setZipResult] = useState<ParseZipResult | null>(null);
+  // Distinguishes a file built from scratch via "Start new file" from one
+  // that came from a real uploaded/dropped/dragged .zip — the "Start new
+  // file" dropdown behaves differently for each (see handleNewFile):
+  // "started" keeps offering categories to ADD (building a file up from
+  // nothing), "imported" narrows to only the categories already present
+  // and lets picking one drop every other tab (there's no "add a made-up
+  // category to a real export" use case).
+  const [zipOrigin, setZipOrigin] = useState<"none" | "started" | "imported">("none");
   // path -> removal deadline (epoch ms). The entry stays in zipResult and
   // in this tab bar the whole time — nothing is actually removed from data
   // until its own timer expires, so "undo" during the window is just
@@ -1778,7 +1786,10 @@ export default function Home() {
           const parsed = await parseZipInWorker(file);
           merged = mergeParseResults(merged, parsed);
         }
-        if (merged) loadEntries(merged);
+        if (merged) {
+          loadEntries(merged);
+          setZipOrigin("imported");
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : "Upload failed");
       } finally {
@@ -1903,6 +1914,7 @@ export default function Home() {
       return;
     }
     setZipResult(null);
+    setZipOrigin("none");
     setActivePath(null);
     setExportZipName("");
     setAgencyId("");
@@ -1999,13 +2011,17 @@ export default function Home() {
     (en): en is ExpressionBuilderZipEntry => en.kind === "expressionBuilder"
   );
 
-  // The "Start new file" dropdown's option list: the full category list
-  // with nothing loaded, narrowed to only the categories already open as
-  // tabs once a zip is loaded — see handleNewFile, which never creates a
-  // new entry in that case, only switches which open tab(s) survive.
-  const openCategoryOptions = zipResult
-    ? CATEGORY_OPTIONS.filter((c) => editableEntries.some((en) => en.kind === c.value))
-    : CATEGORY_OPTIONS;
+  // The "Start new file" dropdown's option list depends on zipOrigin (see
+  // handleNewFile): nothing loaded yet, or a file built from scratch via
+  // this same dropdown ("started") — full list minus categories already
+  // added, so picking one keeps building the file up. A real imported zip
+  // ("imported") narrows to only the categories already open as tabs, so
+  // picking one just switches which open tab(s) survive — nothing new is
+  // ever added to a real export this way.
+  const openCategoryOptions =
+    !zipResult || zipOrigin === "started"
+      ? CATEGORY_OPTIONS.filter((c) => !editableEntries.some((en) => en.kind === c.value))
+      : CATEGORY_OPTIONS.filter((c) => editableEntries.some((en) => en.kind === c.value));
 
   const sensitiveMatches = zipResult
     ? detectSensitiveEntries(zipResult.entries.map((en) => en.path))
@@ -2076,14 +2092,19 @@ export default function Home() {
   }, []);
 
   // With nothing loaded yet, this dropdown starts a genuinely blank file of
-  // the chosen category, as before — its options are the full category
-  // list. Once a zip IS loaded, its options narrow to only the categories
-  // that already exist among the open tabs (see openCategoryOptions below)
-  // — picking one never creates anything new, it just drops every other
-  // active tab, the same 6-second Undo countdown as clicking a tab's own ×
-  // (not an instant/silent delete, and not a confirm() dialog either —
-  // rejected earlier for the same "many clicks" reason that shaped that
-  // Undo flow).
+  // the chosen category, as before, and stays in "started" mode: the
+  // dropdown keeps offering not-yet-added categories so a whole file can
+  // be built up from nothing one category at a time — each pick just adds
+  // that blank entry alongside what's already there, nothing is removed.
+  //
+  // A real imported/dropped/dragged zip is different: there's no "add a
+  // made-up category to a real export" use case, so once zipOrigin is
+  // "imported" the dropdown instead narrows to only the categories already
+  // open as tabs, and picking one just drops every other active tab (same
+  // 6-second Undo countdown as clicking a tab's own ×, not an instant/
+  // silent delete, and not a confirm() dialog either — rejected earlier
+  // for the same "many clicks" reason that shaped that Undo flow). Nothing
+  // new is ever added in that mode.
   const handleNewFile = useCallback(
     (e: React.ChangeEvent<HTMLSelectElement>) => {
       const category = e.target.value;
@@ -2094,20 +2115,36 @@ export default function Home() {
         if (!blankEntry) return;
         setError(null);
         loadEntries({ zipName: "new-export.zip", entries: [blankEntry] });
+        setZipOrigin("started");
         return;
       }
 
-      const kept = editableEntries.filter((en) => en.kind === category);
-      if (kept.length === 0) return;
-      setError(null);
-      for (const en of editableEntries) {
-        if (en.kind !== category) startEntryRemoval(en.path);
+      if (zipOrigin === "imported") {
+        const kept = editableEntries.filter((en) => en.kind === category);
+        if (kept.length === 0) return;
+        setError(null);
+        for (const en of editableEntries) {
+          if (en.kind !== category) startEntryRemoval(en.path);
+        }
+        const current = kept.find((en) => en.path === activePath) ?? kept[0];
+        setActivePath(current.path);
+        setAgencyId(inferAgencyIdForEntry(current));
+        return;
       }
-      const current = kept.find((en) => en.path === activePath) ?? kept[0];
-      setActivePath(current.path);
-      setAgencyId(inferAgencyIdForEntry(current));
+
+      const blankEntry = makeBlankEntryForCategory(category);
+      if (!blankEntry) return;
+      setError(null);
+      const merged = mergeParseResults(zipResult, {
+        zipName: zipResult.zipName,
+        entries: [blankEntry],
+      });
+      const addedEntry = merged.entries[merged.entries.length - 1] as EditableZipEntry;
+      setZipResult(merged);
+      setActivePath(addedEntry.path);
+      setAgencyId(inferAgencyIdForEntry(addedEntry));
     },
-    [zipResult, loadEntries, editableEntries, activePath, startEntryRemoval]
+    [zipResult, zipOrigin, loadEntries, editableEntries, activePath, startEntryRemoval]
   );
 
   const decideSensitive = useCallback((path: string, decision: "keep" | "remove") => {
@@ -2355,11 +2392,22 @@ export default function Home() {
           className="select"
           value=""
           onChange={handleNewFile}
-          aria-label={zipResult ? "Keep only this open category" : "Start a new file"}
-          disabled={!session || !!accessBlockedReason || (!!zipResult && openCategoryOptions.length < 2)}
+          aria-label={
+            !zipResult
+              ? "Start a new file"
+              : zipOrigin === "imported"
+                ? "Keep only this open category"
+                : "Add a category"
+          }
+          disabled={
+            !session ||
+            !!accessBlockedReason ||
+            (!!zipResult && zipOrigin === "imported" && openCategoryOptions.length < 2) ||
+            (!!zipResult && zipOrigin !== "imported" && openCategoryOptions.length < 1)
+          }
         >
           <option value="" disabled hidden>
-            {zipResult ? "Keep only…" : "Start new file"}
+            {!zipResult ? "Start new file" : zipOrigin === "imported" ? "Keep only…" : "Add category…"}
           </option>
           {openCategoryOptions.map((c) => (
             <option key={c.value} value={c.value}>
