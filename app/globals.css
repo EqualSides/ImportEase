@@ -819,6 +819,54 @@ body.resizing-panels {
   text-decoration: underline;
 }
 
+/* Expression Builder script text (lower panel) ---------------------------- */
+
+.expr-script-text-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 12px 0;
+  flex-shrink: 0;
+}
+
+.expr-script-text-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.expr-script-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 110px;
+  max-height: 260px;
+  resize: vertical;
+  font-family: var(--font-mono), monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-primary);
+  background: var(--bg-base);
+  border: 1px solid var(--border-hairline);
+  border-radius: 6px;
+  padding: 8px 10px;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.expr-script-textarea:focus {
+  outline: none;
+  border-color: var(--accent-cyan-text);
+}
+
+.expr-script-textarea:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 /* Expression Builder code check ------------------------------------------ */
 
 .lint-modal {

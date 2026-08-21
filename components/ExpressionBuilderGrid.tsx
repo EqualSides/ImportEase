@@ -80,7 +80,7 @@ const EXPRESSION_COLUMN_META: ColumnMeta[] = [
   { field: "expressionMode", headerName: "Mode", editable: true },
   { field: "expressionVersion", headerName: "Version", editable: true, hide: true },
   { field: "viewID", headerName: "View ID", editable: true, hide: true },
-  { field: "scriptText", headerName: "Script Text", editable: true },
+  { field: "scriptText", headerName: "Script Text", editable: true, hide: true },
   { field: "calcCount", headerName: "# Calculations", editable: false },
   { field: "criteriaCount", headerName: "# Criteria", editable: false },
   { field: "fieldCount", headerName: "# Fields", editable: false },
@@ -315,6 +315,19 @@ const ExpressionBuilderGrid = forwardRef<ExpressionBuilderGridHandle, Props>(
       const updated = toExpressionRow(node);
       setExprRows((prev) => prev.map((r) => (r.uid === updated.uid ? updated : r)));
     }, []);
+
+    // Script Text lives in the lower panel (not as a top-grid column) —
+    // it's often multi-line code, which a grid cell can't show wrapped
+    // and readable the way a textarea can.
+    const onScriptTextChange = useCallback(
+      (value: string) => {
+        if (!selectedExprNode) return;
+        setExpressionField(selectedExprNode, "scriptText", value);
+        refreshExprRow(selectedExprNode);
+        onChange();
+      },
+      [selectedExprNode, refreshExprRow, onChange]
+    );
 
     const flashRow = useCallback((api: any, uid: string, field: string) => {
       const rowNode = api?.getRowNode(uid);
@@ -551,6 +564,21 @@ const ExpressionBuilderGrid = forwardRef<ExpressionBuilderGridHandle, Props>(
         )}
 
         <div className="grid-panel" style={{ flex: 1, minHeight: MIN_PANEL_PX }}>
+          <div className="expr-script-text-section">
+            <label className="expr-script-text-label" htmlFor="expr-script-text-input">
+              Script Text
+              {selectedExprRow ? ` — ${selectedExprRow.expressionName || "(unnamed)"}` : ""}
+            </label>
+            <textarea
+              id="expr-script-text-input"
+              className="expr-script-textarea"
+              value={selectedExprRow?.scriptText ?? ""}
+              onChange={(e) => onScriptTextChange(e.target.value)}
+              disabled={!selectedExprNode}
+              placeholder={selectedExprNode ? "" : "Select an Expression above to view/edit its script"}
+              spellCheck={false}
+            />
+          </div>
           <div className="grid-toolbar">
             <button
               className={selectedArm === "calc" ? "btn btn-choice-active" : "btn"}
