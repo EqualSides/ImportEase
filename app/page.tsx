@@ -1994,9 +1994,42 @@ export default function Home() {
     : [];
   const undecidedSensitive = sensitiveMatches.filter((m) => !sensitiveDecisions[m.path]);
 
+  // Drops a whole detected type (e.g. one of a dozen categories in a
+  // multi-file export the user only cares about one of) out of the
+  // working file entirely — not just hidden, actually removed from
+  // zipResult so it's gone from both the tab bar and the export.
+  const removeEntryType = useCallback(
+    (path: string) => {
+      setZipResult((prev) =>
+        prev ? { ...prev, entries: prev.entries.filter((en) => en.path !== path) } : prev
+      );
+      if (activePath === path) {
+        const remaining = editableEntries.filter((en) => en.path !== path);
+        const next = remaining[0] ?? null;
+        setActivePath(next?.path ?? null);
+        setAgencyId(next ? inferAgencyIdForEntry(next) : "");
+      }
+    },
+    [activePath, editableEntries]
+  );
+
   const decideSensitive = useCallback((path: string, decision: "keep" | "remove") => {
     setSensitiveDecisions((prev) => ({ ...prev, [path]: decision }));
   }, []);
+
+  // Bulk version for the common case — a file with a dozen flagged
+  // entries where the answer is the same for all of them — without
+  // making anyone click Keep/Remove one row at a time.
+  const decideAllSensitive = useCallback(
+    (decision: "keep" | "remove") => {
+      setSensitiveDecisions((prev) => {
+        const next = { ...prev };
+        for (const m of sensitiveMatches) next[m.path] = decision;
+        return next;
+      });
+    },
+    [sensitiveMatches]
+  );
 
   const handleExport = useCallback(async () => {
     if (!zipResult) return;
@@ -2241,21 +2274,33 @@ export default function Home() {
         {editableEntries.length > 1 && (
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             {editableEntries.map((en) => (
-              <button
-                key={en.path}
-                className="btn"
-                onClick={() => {
-                  setActivePath(en.path);
-                  setAgencyId(inferAgencyIdForEntry(en));
-                }}
-                style={
-                  en.path === activePath
-                    ? { borderColor: "var(--accent-cyan-text)", color: "var(--accent-cyan-text)" }
-                    : undefined
-                }
-              >
-                {en.path}
-              </button>
+              <div key={en.path} style={{ display: "inline-flex" }}>
+                <button
+                  className="btn"
+                  onClick={() => {
+                    setActivePath(en.path);
+                    setAgencyId(inferAgencyIdForEntry(en));
+                  }}
+                  style={{
+                    borderTopRightRadius: 0,
+                    borderBottomRightRadius: 0,
+                    borderRight: "none",
+                    ...(en.path === activePath
+                      ? { borderColor: "var(--accent-cyan-text)", color: "var(--accent-cyan-text)" }
+                      : undefined),
+                  }}
+                >
+                  {en.path}
+                </button>
+                <button
+                  className="btn icon-btn"
+                  onClick={() => removeEntryType(en.path)}
+                  title={`Remove ${en.path} from this file`}
+                  style={{ borderTopLeftRadius: 0, borderBottomLeftRadius: 0 }}
+                >
+                  ×
+                </button>
+              </div>
             ))}
           </div>
         )}
@@ -2319,8 +2364,20 @@ export default function Home() {
       {undecidedSensitive.length > 0 && (
         <div className="sensitive-gate">
           <div className="sensitive-gate-header">
-            ⚠ This zip includes files that carry user accounts or security/permission data.
-            Decide what happens to each one before you can export.
+            <span>
+              ⚠ This zip includes files that carry user accounts or security/permission data.
+              Decide what happens to each one before you can export.
+            </span>
+            {sensitiveMatches.length > 1 && (
+              <div className="sensitive-gate-bulk-actions">
+                <button className="btn" onClick={() => decideAllSensitive("keep")}>
+                  Keep All
+                </button>
+                <button className="btn btn-danger" onClick={() => decideAllSensitive("remove")}>
+                  Remove All
+                </button>
+              </div>
+            )}
           </div>
           {sensitiveMatches.map((m) => {
             const decision = sensitiveDecisions[m.path];

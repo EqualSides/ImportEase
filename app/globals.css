@@ -387,9 +387,19 @@ body.resizing-panels {
 }
 
 .sensitive-gate-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
   font-size: 13px;
   color: var(--accent-amber-text);
   font-weight: 600;
+}
+
+.sensitive-gate-bulk-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
 }
 
 .sensitive-gate-row {
