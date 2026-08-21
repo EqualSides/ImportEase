@@ -28,10 +28,15 @@
  * No `refId` attribute anywhere in the real sample, at any of the three
  * levels. Cascades: a group's appSpecInfoGroupCode cascades into every
  * field's own r1CheckboxCode and every dropdown value's groupCode
- * (confirmed identical to the group code in the real sample);
- * r1CheckboxGroup and r1CheckboxType cascade into every field's own
- * r1CheckboxGroup/r1CheckboxType (duplicate fields on each field
- * definition).
+ * (confirmed identical to the group code in the real sample).
+ *
+ * r1CheckboxType is NOT a group-level cascade despite the small fixture
+ * sample suggesting otherwise — confirmed against the full 685-record real
+ * export: a single group's fields can carry a dozen-plus distinct
+ * r1CheckboxType values (one group alone had 13, ranging 2–99 fields
+ * each). It's genuinely per-field data, independently editable, and
+ * ASIGroupGrid's middle tier groups the Fields tier by it for exactly
+ * that reason.
  */
 import {
   type ListAttrs,
