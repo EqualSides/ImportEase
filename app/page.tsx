@@ -1626,6 +1626,10 @@ const CONDITIONS_COLUMNS: FlatGridColumnMeta[] = [
 
 export default function Home() {
   const [zipResult, setZipResult] = useState<ParseZipResult | null>(null);
+  const [recentlyRemoved, setRecentlyRemoved] = useState<{ entry: ZipEntryData; index: number } | null>(
+    null
+  );
+  const undoRemoveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [activePath, setActivePath] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -1649,6 +1653,12 @@ export default function Home() {
   const [adminPanelOpen, setAdminPanelOpen] = useState(false);
   const [accessBlockedReason, setAccessBlockedReason] = useState<"expired" | "pending" | null>(null);
   const [subscriptionExpiresAt, setSubscriptionExpiresAt] = useState<string | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (undoRemoveTimerRef.current) clearTimeout(undoRemoveTimerRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -1998,8 +2008,18 @@ export default function Home() {
   // multi-file export the user only cares about one of) out of the
   // working file entirely — not just hidden, actually removed from
   // zipResult so it's gone from both the tab bar and the export.
+  //
+  // No confirm() dialog: for the "keep 1 of 12" case that would mean
+  // clicking through 11 confirmations. Instead removal is instant and
+  // a brief Undo banner (recentlyRemoved) covers the case where × got
+  // clicked by mistake — one click to put it right back, no re-upload
+  // needed, without adding friction to every deliberate removal.
   const removeEntryType = useCallback(
     (path: string) => {
+      if (!zipResult) return;
+      const index = zipResult.entries.findIndex((en) => en.path === path);
+      if (index === -1) return;
+      const entry = zipResult.entries[index];
       setZipResult((prev) =>
         prev ? { ...prev, entries: prev.entries.filter((en) => en.path !== path) } : prev
       );
@@ -2009,9 +2029,32 @@ export default function Home() {
         setActivePath(next?.path ?? null);
         setAgencyId(next ? inferAgencyIdForEntry(next) : "");
       }
+      if (undoRemoveTimerRef.current) clearTimeout(undoRemoveTimerRef.current);
+      setRecentlyRemoved({ entry, index });
+      undoRemoveTimerRef.current = setTimeout(() => setRecentlyRemoved(null), 8000);
     },
-    [activePath, editableEntries]
+    [zipResult, activePath, editableEntries]
   );
+
+  const undoRemoveEntryType = useCallback(() => {
+    if (!recentlyRemoved) return;
+    if (undoRemoveTimerRef.current) {
+      clearTimeout(undoRemoveTimerRef.current);
+      undoRemoveTimerRef.current = null;
+    }
+    const { entry, index } = recentlyRemoved;
+    setZipResult((prev) => {
+      if (!prev) return prev;
+      const entries = [...prev.entries];
+      entries.splice(Math.min(index, entries.length), 0, entry);
+      return { ...prev, entries };
+    });
+    if (isEditableEntry(entry)) {
+      setActivePath(entry.path);
+      setAgencyId(inferAgencyIdForEntry(entry));
+    }
+    setRecentlyRemoved(null);
+  }, [recentlyRemoved]);
 
   const decideSensitive = useCallback((path: string, decision: "keep" | "remove") => {
     setSensitiveDecisions((prev) => ({ ...prev, [path]: decision }));
@@ -2274,21 +2317,18 @@ export default function Home() {
         {editableEntries.length > 1 && (
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             {editableEntries.map((en) => (
-              <div key={en.path} style={{ display: "inline-flex" }}>
+              <div key={en.path} style={{ display: "inline-flex", gap: 4 }}>
                 <button
                   className="btn"
                   onClick={() => {
                     setActivePath(en.path);
                     setAgencyId(inferAgencyIdForEntry(en));
                   }}
-                  style={{
-                    borderTopRightRadius: 0,
-                    borderBottomRightRadius: 0,
-                    borderRight: "none",
-                    ...(en.path === activePath
+                  style={
+                    en.path === activePath
                       ? { borderColor: "var(--accent-cyan-text)", color: "var(--accent-cyan-text)" }
-                      : undefined),
-                  }}
+                      : undefined
+                  }
                 >
                   {en.path}
                 </button>
@@ -2296,12 +2336,22 @@ export default function Home() {
                   className="btn icon-btn"
                   onClick={() => removeEntryType(en.path)}
                   title={`Remove ${en.path} from this file`}
-                  style={{ borderTopLeftRadius: 0, borderBottomLeftRadius: 0 }}
                 >
                   ×
                 </button>
               </div>
             ))}
+          </div>
+        )}
+
+        {recentlyRemoved && (
+          <div className="undo-banner">
+            <span>
+              Removed <strong>{recentlyRemoved.entry.path}</strong>.
+            </span>
+            <button className="btn" onClick={undoRemoveEntryType}>
+              Undo
+            </button>
           </div>
         )}
 
