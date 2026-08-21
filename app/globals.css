@@ -197,6 +197,7 @@ button {
 .grid-toolbar {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
   margin-bottom: 8px;
   flex-shrink: 0;
@@ -829,12 +830,29 @@ body.resizing-panels {
   flex-shrink: 0;
 }
 
+.expr-script-text-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .expr-script-text-label {
   font-size: 11px;
   font-weight: 600;
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.04em;
+}
+
+.script-text-modal {
+  width: 720px;
+  max-width: calc(100vw - 32px);
+}
+
+.expr-script-textarea-large {
+  min-height: 50vh;
+  max-height: 65vh;
+  font-size: 13px;
 }
 
 .expr-script-textarea {

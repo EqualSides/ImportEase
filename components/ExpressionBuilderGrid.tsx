@@ -201,6 +201,8 @@ const ExpressionBuilderGrid = forwardRef<ExpressionBuilderGridHandle, Props>(
     const [selectedExprUid, setSelectedExprUid] = useState<string | null>(exprRows[0]?.uid ?? null);
     const [selectedArm, setSelectedArm] = useState<ArmKey>("calc");
     const [lintFindings, setLintFindings] = useState<LintFinding[] | null>(null);
+    const [scriptTextCollapsed, setScriptTextCollapsed] = useState(false);
+    const [scriptTextModalOpen, setScriptTextModalOpen] = useState(false);
 
     const selectedExprNode = useMemo(
       () => (selectedExprUid ? findExpressionByUid(records, selectedExprUid) ?? null : null),
@@ -565,19 +567,39 @@ const ExpressionBuilderGrid = forwardRef<ExpressionBuilderGridHandle, Props>(
 
         <div className="grid-panel" style={{ flex: 1, minHeight: MIN_PANEL_PX }}>
           <div className="expr-script-text-section">
-            <label className="expr-script-text-label" htmlFor="expr-script-text-input">
-              Script Text
-              {selectedExprRow ? ` — ${selectedExprRow.expressionName || "(unnamed)"}` : ""}
-            </label>
-            <textarea
-              id="expr-script-text-input"
-              className="expr-script-textarea"
-              value={selectedExprRow?.scriptText ?? ""}
-              onChange={(e) => onScriptTextChange(e.target.value)}
-              disabled={!selectedExprNode}
-              placeholder={selectedExprNode ? "" : "Select an Expression above to view/edit its script"}
-              spellCheck={false}
-            />
+            <div className="expr-script-text-header">
+              <button
+                className="btn icon-btn"
+                onClick={() => setScriptTextCollapsed((c) => !c)}
+                title={scriptTextCollapsed ? "Expand Script Text" : "Collapse Script Text"}
+              >
+                {scriptTextCollapsed ? "▸" : "▾"}
+              </button>
+              <label className="expr-script-text-label" htmlFor="expr-script-text-input">
+                Script Text
+                {selectedExprRow ? ` — ${selectedExprRow.expressionName || "(unnamed)"}` : ""}
+              </label>
+              <button
+                className="btn"
+                onClick={() => setScriptTextModalOpen(true)}
+                disabled={!selectedExprNode}
+                title="Open in a larger window"
+                style={{ marginLeft: "auto" }}
+              >
+                Open in Window
+              </button>
+            </div>
+            {!scriptTextCollapsed && (
+              <textarea
+                id="expr-script-text-input"
+                className="expr-script-textarea"
+                value={selectedExprRow?.scriptText ?? ""}
+                onChange={(e) => onScriptTextChange(e.target.value)}
+                disabled={!selectedExprNode}
+                placeholder={selectedExprNode ? "" : "Select an Expression above to view/edit its script"}
+                spellCheck={false}
+              />
+            )}
           </div>
           <div className="grid-toolbar">
             <button
@@ -598,8 +620,6 @@ const ExpressionBuilderGrid = forwardRef<ExpressionBuilderGridHandle, Props>(
             >
               Fields{selectedExprRow ? ` (${selectedExprRow.fieldCount})` : ""}
             </button>
-          </div>
-          <div className="grid-toolbar">
             <button className="btn" onClick={addArmRow} disabled={!selectedExprNode}>
               + Add {ARM_LABEL[selectedArm]}
             </button>
@@ -626,6 +646,34 @@ const ExpressionBuilderGrid = forwardRef<ExpressionBuilderGridHandle, Props>(
             />
           </div>
         </div>
+
+        {scriptTextModalOpen && (
+          <div className="auth-modal-backdrop" onClick={() => setScriptTextModalOpen(false)}>
+            <div
+              className="auth-modal script-text-modal"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button
+                className="auth-modal-close"
+                onClick={() => setScriptTextModalOpen(false)}
+                aria-label="Close"
+              >
+                ×
+              </button>
+              <h2 className="lint-modal-title">
+                Script Text{selectedExprRow ? ` — ${selectedExprRow.expressionName || "(unnamed)"}` : ""}
+              </h2>
+              <textarea
+                className="expr-script-textarea expr-script-textarea-large"
+                value={selectedExprRow?.scriptText ?? ""}
+                onChange={(e) => onScriptTextChange(e.target.value)}
+                disabled={!selectedExprNode}
+                spellCheck={false}
+                autoFocus
+              />
+            </div>
+          </div>
+        )}
 
         {lintFindings !== null && (
           <div className="auth-modal-backdrop" onClick={() => setLintFindings(null)}>
