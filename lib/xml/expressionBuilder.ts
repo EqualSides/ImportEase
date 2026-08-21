@@ -236,6 +236,33 @@ export interface ExpressFieldRow {
   type: string;
 }
 
+/**
+ * Derives the "name" element from a "variableKey" the way real Accela
+ * exports do. Confirmed against a real RefExpressionModel export:
+ *   onLoad                                  -> onLoad            (no "::")
+ *   CONTACT1::contactsModel*phone3          -> contactsModel*phone3   (2 segments: strip prefix)
+ *   ASI::FORM / ASIT::...::FORM             -> FORM              (last segment is literally "FORM")
+ *   ASI::BUSINESS BASICS::Business Activity -> app_spec_info_BUSINESS_BASICS_Business_Activity (3+ segments)
+ * ASIT (repeating/table ASI groups) is the one prefix that does NOT
+ * follow the 3-segment rule — real exports show positional codes like
+ * "0 4" there instead, which can't be derived from the label text, so
+ * we deliberately return null and leave "name" for the user to fill in.
+ */
+export function deriveFieldName(variableKey: string): string | null {
+  const trimmed = variableKey.trim();
+  if (!trimmed) return null;
+  const segments = trimmed.split("::");
+  if (segments[segments.length - 1] === "FORM") return "FORM";
+  if (segments.length === 1) return trimmed;
+  if (segments.length === 2) return segments[1];
+  if (segments[0].toUpperCase() === "ASIT") return null;
+  const rest = segments
+    .slice(1)
+    .map((s) => s.trim().replace(/\s+/g, "_").replace(/\//g, "%2F"))
+    .join("_");
+  return `app_spec_info_${rest}`;
+}
+
 export function toExpressFieldRow(node: PNode): ExpressFieldRow {
   const children = getChildren(node);
   return {

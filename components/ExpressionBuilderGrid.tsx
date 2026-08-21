@@ -38,6 +38,7 @@ import {
   toExpressCalculationRow,
   toExpressCriteriaRow,
   toExpressFieldRow,
+  deriveFieldName,
 } from "@/lib/xml/expressionBuilder";
 import { type LintFinding, lintExpression } from "@/lib/xml/expressionLint";
 import CodeTextarea from "./CodeTextarea";
@@ -111,9 +112,9 @@ const CRITERIA_COLUMN_META: ColumnMeta[] = [
 ];
 
 const FIELD_COLUMN_META: ColumnMeta[] = [
-  { field: "name", headerName: "Name", editable: true },
+  { field: "variableKey", headerName: "Variable Key", editable: true },
+  { field: "name", headerName: "Name", editable: true, hide: true },
   { field: "label", headerName: "Label", editable: true, hide: true },
-  { field: "variableKey", headerName: "Variable Key", editable: true, hide: true },
   { field: "usage", headerName: "Usage", editable: true, hide: true },
   { field: "event", headerName: "Event", editable: true, hide: true },
   { field: "isRequired", headerName: "Required?", editable: true, hide: true },
@@ -145,7 +146,7 @@ const ARM_LABEL_PLURAL: Record<ArmKey, string> = {
 const ARM_PRIMARY_FIELD: Record<ArmKey, string> = {
   calc: "fieldName",
   criteria: "fieldName",
-  field: "name",
+  field: "variableKey",
 };
 
 const CHAR_PX = 7.4;
@@ -399,6 +400,10 @@ const ExpressionBuilderGrid = forwardRef<ExpressionBuilderGridHandle, Props>(
         if (!node) return;
         const field = e.colDef.field as string;
         setArmField(selectedArm, node, field, String(e.newValue ?? ""));
+        if (selectedArm === "field" && field === "variableKey" && !(e.data as ExpressFieldRow).name) {
+          const derivedName = deriveFieldName(String(e.newValue ?? ""));
+          if (derivedName) setArmField(selectedArm, node, "name", derivedName);
+        }
         const updated = toArmRow(selectedArm, node);
         setArmRows((prev) => prev.map((r) => (r.uid === updated.uid ? updated : r)));
         flashRow(armGridRef.current?.api, e.data.uid, field);
