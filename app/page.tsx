@@ -1830,82 +1830,67 @@ export default function Home() {
     [processFiles]
   );
 
-  const handleNewFile = useCallback(
-    (e: React.ChangeEvent<HTMLSelectElement>) => {
-      const category = e.target.value;
-      e.target.value = "";
-      const blankEntry =
-        category === "standardChoice"
-          ? makeBlankStandardChoiceEntry()
-          : category === "sharedDropDown"
-            ? makeBlankSharedDropDownEntry()
-            : category === "organizationAgency"
-              ? makeBlankOrganizationAgencyEntry()
-              : category === "inspRelateInsp"
-                ? makeBlankInspRelateInspEntry()
-                : category === "refAddressTypeGroup"
-                  ? makeBlankRefAddressTypeGroupEntry()
-                  : category === "referenceMask"
-                    ? makeBlankReferenceMaskEntry()
-                    : category === "emailMessage"
-                      ? makeBlankEmailMessageEntry()
-                      : category === "sequence"
-                        ? makeBlankSequenceEntry()
-                        : category === "checklistGroup"
-                          ? makeBlankCheckListGroupEntry()
-                          : category === "applicationStatusGroup"
-                            ? makeBlankApplicationStatusGroupEntry()
-                            : category === "commentGroup"
-                              ? makeBlankCommentGroupEntry()
-                              : category === "timeGroup"
-                                ? makeBlankTimeGroupEntry()
-                                : category === "timeTypes"
-                                  ? makeBlankTimeTypesEntry()
-                                  : category === "refInspectionResultGroup"
-                                    ? makeBlankRefInspectionResultGroupEntry()
-                                    : category === "refLookupTable"
-                                      ? makeBlankRefLookupTableEntry()
-                                      : category === "guideSheet"
-                                        ? makeBlankGuideSheetEntry()
-                                        : category === "rapoTemplate"
-                                          ? makeBlankRAPOTemplateEntry()
-                                          : category === "smartChoiceGroup"
-                                            ? makeBlankSmartChoiceGroupEntry()
-                                            : category === "standardCommentGroup"
-                                              ? makeBlankStandardCommentGroupEntry()
-                                              : category === "refFeeSchedule"
-                                                ? makeBlankRefFeeScheduleEntry()
-                                                : category === "virProcess"
-                                                  ? makeBlankVirProcessEntry()
-                                                  : category === "asiGroup"
-                                                    ? makeBlankASIGroupEntry()
-                                                    : category === "capType"
-                                                      ? makeBlankCapTypeEntry()
-                                                      : category === "formLayoutEditor"
-                                                        ? makeBlankFormLayoutEditorEntry()
-                                                        : category === "inspectionGroup"
-                                                          ? makeBlankInspectionGroupEntry()
-                                                          : category === "refDocument"
-                                                            ? makeBlankRefDocumentEntry()
-                                                            : category === "departmentType"
-                                                              ? makeBlankDepartmentTypeEntry()
-                                                              : category === "conditions"
-                                                                ? makeBlankConditionsEntry()
-                                                                : category === "expressionBuilder"
-                                                                  ? makeBlankExpressionBuilderEntry()
-                                                                  : null;
-      if (!blankEntry) return;
-      if (
-        zipResult &&
-        !window.confirm("Start a new blank file? Unsaved changes in the current file will be lost.")
-      ) {
-        return;
-      }
-      setError(null);
-      loadEntries({ zipName: "new-export.zip", entries: [blankEntry] });
-    },
-    [zipResult, loadEntries]
-  );
+  function makeBlankEntryForCategory(category: string): EditableZipEntry | null {
+    return category === "standardChoice"
+      ? makeBlankStandardChoiceEntry()
+      : category === "sharedDropDown"
+        ? makeBlankSharedDropDownEntry()
+        : category === "organizationAgency"
+          ? makeBlankOrganizationAgencyEntry()
+          : category === "inspRelateInsp"
+            ? makeBlankInspRelateInspEntry()
+            : category === "refAddressTypeGroup"
+              ? makeBlankRefAddressTypeGroupEntry()
+              : category === "referenceMask"
+                ? makeBlankReferenceMaskEntry()
+                : category === "emailMessage"
+                  ? makeBlankEmailMessageEntry()
+                  : category === "sequence"
+                    ? makeBlankSequenceEntry()
+                    : category === "checklistGroup"
+                      ? makeBlankCheckListGroupEntry()
+                      : category === "applicationStatusGroup"
+                        ? makeBlankApplicationStatusGroupEntry()
+                        : category === "commentGroup"
+                          ? makeBlankCommentGroupEntry()
+                          : category === "timeGroup"
+                            ? makeBlankTimeGroupEntry()
+                            : category === "timeTypes"
+                              ? makeBlankTimeTypesEntry()
+                              : category === "refInspectionResultGroup"
+                                ? makeBlankRefInspectionResultGroupEntry()
+                                : category === "refLookupTable"
+                                  ? makeBlankRefLookupTableEntry()
+                                  : category === "guideSheet"
+                                    ? makeBlankGuideSheetEntry()
+                                    : category === "rapoTemplate"
+                                      ? makeBlankRAPOTemplateEntry()
+                                      : category === "smartChoiceGroup"
+                                        ? makeBlankSmartChoiceGroupEntry()
+                                        : category === "standardCommentGroup"
+                                          ? makeBlankStandardCommentGroupEntry()
+                                          : category === "refFeeSchedule"
+                                            ? makeBlankRefFeeScheduleEntry()
+                                            : category === "virProcess"
+                                              ? makeBlankVirProcessEntry()
+                                              : category === "asiGroup"
+                                                ? makeBlankASIGroupEntry()
+                                                : category === "capType"
+                                                  ? makeBlankCapTypeEntry()
+                                                  : category === "formLayoutEditor"
+                                                    ? makeBlankFormLayoutEditorEntry()
+                                                    : category === "inspectionGroup"
+                                                      ? makeBlankInspectionGroupEntry()
+                                                      : category === "refDocument"
+                                                        ? makeBlankRefDocumentEntry()
+                                                        : category === "departmentType"
+                                                          ? makeBlankDepartmentTypeEntry()
+                                                          : category === "conditions"
+                                                            ? makeBlankConditionsEntry()
+                                                            : category === "expressionBuilder"
+                                                              ? makeBlankExpressionBuilderEntry()
+                                                              : null;
+  }
 
   // Uploads/drops now merge into the current session rather than replacing
   // it (see mergeParseResults), so there needs to be an explicit way back
@@ -2081,6 +2066,42 @@ export default function Home() {
       return next;
     });
   }, []);
+
+  // With nothing loaded yet, "Start new file" just opens a blank file of
+  // the chosen category, as before. Once a zip IS loaded, picking a
+  // category instead adds a blank entry of that type alongside whatever's
+  // already there and drops every other active tab — same 6-second
+  // Undo countdown as clicking a tab's own ×, not an instant/silent
+  // delete, and not a confirm() dialog either (rejected earlier for the
+  // same "many clicks" reason that shaped that Undo flow). Existing tabs
+  // of the category just picked are left alone.
+  const handleNewFile = useCallback(
+    (e: React.ChangeEvent<HTMLSelectElement>) => {
+      const category = e.target.value;
+      e.target.value = "";
+      const blankEntry = makeBlankEntryForCategory(category);
+      if (!blankEntry) return;
+      setError(null);
+
+      if (!zipResult) {
+        loadEntries({ zipName: "new-export.zip", entries: [blankEntry] });
+        return;
+      }
+
+      for (const en of editableEntries) {
+        if (en.kind !== category) startEntryRemoval(en.path);
+      }
+      const merged = mergeParseResults(zipResult, {
+        zipName: zipResult.zipName,
+        entries: [blankEntry],
+      });
+      const addedEntry = merged.entries[merged.entries.length - 1] as EditableZipEntry;
+      setZipResult(merged);
+      setActivePath(addedEntry.path);
+      setAgencyId(inferAgencyIdForEntry(addedEntry));
+    },
+    [zipResult, loadEntries, editableEntries, startEntryRemoval]
+  );
 
   const decideSensitive = useCallback((path: string, decision: "keep" | "remove") => {
     setSensitiveDecisions((prev) => ({ ...prev, [path]: decision }));
