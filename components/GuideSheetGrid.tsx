@@ -169,6 +169,8 @@ const GuideSheetGrid = forwardRef<GuideSheetGridHandle, Props>(function GuideShe
   const [topHeight, setTopHeight] = useState<number | null>(null);
   const [midHeight, setMidHeight] = useState<number | null>(null);
   const [topCollapsed, setTopCollapsed] = useState(false);
+  const [midCollapsed, setMidCollapsed] = useState(false);
+  const [bottomCollapsed, setBottomCollapsed] = useState(false);
   const userResizedRef = useRef(false);
   const dragRef = useRef<{
     which: "top" | "mid";
@@ -574,15 +576,26 @@ const GuideSheetGrid = forwardRef<GuideSheetGridHandle, Props>(function GuideShe
         )}
       </div>
 
-      {!topCollapsed && (
+      {!topCollapsed && !midCollapsed && (
         <div className="resize-handle" onMouseDown={onTopHandleMouseDown} title="Drag to resize" />
       )}
 
       <div
         className="grid-panel"
-        style={{ flex: "0 0 auto", height: midHeight ?? undefined, minHeight: MIN_PANEL_PX }}
+        style={
+          midCollapsed
+            ? { flex: "0 0 auto", height: "auto", minHeight: 0 }
+            : { flex: "0 0 auto", height: midHeight ?? undefined, minHeight: MIN_PANEL_PX }
+        }
       >
         <div className="grid-toolbar">
+          <button
+            className="btn icon-btn"
+            onClick={() => setMidCollapsed((c) => !c)}
+            title={midCollapsed ? "Expand Items" : "Collapse Items"}
+          >
+            {midCollapsed ? "▸" : "▾"}
+          </button>
           <button className="btn" onClick={addItemRow} disabled={!selectedSheetNode}>
             + Add Item
           </button>
@@ -597,28 +610,52 @@ const GuideSheetGrid = forwardRef<GuideSheetGridHandle, Props>(function GuideShe
             {selectedSheetNode
               ? `Items for "${toGuideSheetRow(selectedSheetNode).guideType || "(unnamed)"}" (${itemRows.length})`
               : "Select a Guide Sheet above to see its items"}
+            {midCollapsed && selectedItemNode && (
+              <>
+                {" — "}
+                <strong>{toGuideSheetItemRow(selectedItemNode).guideItemText || "(unnamed)"}</strong>
+              </>
+            )}
           </span>
         </div>
-        <div className={gridThemeClass} style={{ flex: 1, width: "100%", minHeight: 0 }}>
-          <AgGridReact<GuideSheetItemRow>
-            ref={itemGridRef}
-            rowData={itemRows}
-            columnDefs={itemColumnDefs}
-            rowHeight={ROW_HEIGHT}
-            headerHeight={HEADER_HEIGHT}
-            getRowId={(p) => p.data.uid}
-            rowSelection="single"
-            onSelectionChanged={onItemSelectionChanged}
-            onCellValueChanged={onItemCellValueChanged}
-            stopEditingWhenCellsLoseFocus
-          />
-        </div>
+        {!midCollapsed && (
+          <div className={gridThemeClass} style={{ flex: 1, width: "100%", minHeight: 0 }}>
+            <AgGridReact<GuideSheetItemRow>
+              ref={itemGridRef}
+              rowData={itemRows}
+              columnDefs={itemColumnDefs}
+              rowHeight={ROW_HEIGHT}
+              headerHeight={HEADER_HEIGHT}
+              getRowId={(p) => p.data.uid}
+              rowSelection="single"
+              onSelectionChanged={onItemSelectionChanged}
+              onCellValueChanged={onItemCellValueChanged}
+              stopEditingWhenCellsLoseFocus
+            />
+          </div>
+        )}
       </div>
 
-      <div className="resize-handle" onMouseDown={onMidHandleMouseDown} title="Drag to resize" />
+      {!midCollapsed && !bottomCollapsed && (
+        <div className="resize-handle" onMouseDown={onMidHandleMouseDown} title="Drag to resize" />
+      )}
 
-      <div className="grid-panel" style={{ flex: 1, minHeight: MIN_PANEL_PX }}>
+      <div
+        className="grid-panel"
+        style={
+          bottomCollapsed
+            ? { flex: "0 0 auto", height: "auto", minHeight: 0 }
+            : { flex: 1, minHeight: MIN_PANEL_PX }
+        }
+      >
         <div className="grid-toolbar">
+          <button
+            className="btn icon-btn"
+            onClick={() => setBottomCollapsed((c) => !c)}
+            title={bottomCollapsed ? "Expand Status Groups" : "Collapse Status Groups"}
+          >
+            {bottomCollapsed ? "▸" : "▾"}
+          </button>
           <button className="btn" onClick={addStatusGroupRow} disabled={!selectedItemNode}>
             + Add Status Group
           </button>
@@ -635,19 +672,21 @@ const GuideSheetGrid = forwardRef<GuideSheetGridHandle, Props>(function GuideShe
               : "Select an Item above to see its status groups"}
           </span>
         </div>
-        <div className={gridThemeClass} style={{ flex: 1, width: "100%", minHeight: 0 }}>
-          <AgGridReact<GuideSheetItemStatusGroupRow>
-            ref={statusGroupGridRef}
-            rowData={statusGroupRows}
-            columnDefs={statusGroupColumnDefs}
-            rowHeight={ROW_HEIGHT}
-            headerHeight={HEADER_HEIGHT}
-            getRowId={(p) => p.data.uid}
-            rowSelection="multiple"
-            onCellValueChanged={onStatusGroupCellValueChanged}
-            stopEditingWhenCellsLoseFocus
-          />
-        </div>
+        {!bottomCollapsed && (
+          <div className={gridThemeClass} style={{ flex: 1, width: "100%", minHeight: 0 }}>
+            <AgGridReact<GuideSheetItemStatusGroupRow>
+              ref={statusGroupGridRef}
+              rowData={statusGroupRows}
+              columnDefs={statusGroupColumnDefs}
+              rowHeight={ROW_HEIGHT}
+              headerHeight={HEADER_HEIGHT}
+              getRowId={(p) => p.data.uid}
+              rowSelection="multiple"
+              onCellValueChanged={onStatusGroupCellValueChanged}
+              stopEditingWhenCellsLoseFocus
+            />
+          </div>
+        )}
       </div>
     </div>
   );

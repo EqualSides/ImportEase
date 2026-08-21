@@ -175,6 +175,8 @@ const ASIGroupGrid = forwardRef<ASIGroupGridHandle, Props>(function ASIGroupGrid
   const [topHeight, setTopHeight] = useState<number | null>(null);
   const [midHeight, setMidHeight] = useState<number | null>(null);
   const [topCollapsed, setTopCollapsed] = useState(false);
+  const [midCollapsed, setMidCollapsed] = useState(false);
+  const [bottomCollapsed, setBottomCollapsed] = useState(false);
   const userResizedRef = useRef(false);
   const dragRef = useRef<{
     which: "top" | "mid";
@@ -580,15 +582,26 @@ const ASIGroupGrid = forwardRef<ASIGroupGridHandle, Props>(function ASIGroupGrid
         )}
       </div>
 
-      {!topCollapsed && (
+      {!topCollapsed && !midCollapsed && (
         <div className="resize-handle" onMouseDown={onTopHandleMouseDown} title="Drag to resize" />
       )}
 
       <div
         className="grid-panel"
-        style={{ flex: "0 0 auto", height: midHeight ?? undefined, minHeight: MIN_PANEL_PX }}
+        style={
+          midCollapsed
+            ? { flex: "0 0 auto", height: "auto", minHeight: 0 }
+            : { flex: "0 0 auto", height: midHeight ?? undefined, minHeight: MIN_PANEL_PX }
+        }
       >
         <div className="grid-toolbar">
+          <button
+            className="btn icon-btn"
+            onClick={() => setMidCollapsed((c) => !c)}
+            title={midCollapsed ? "Expand ASI Fields" : "Collapse ASI Fields"}
+          >
+            {midCollapsed ? "▸" : "▾"}
+          </button>
           <button className="btn" onClick={addFieldRow} disabled={!selectedGroupNode}>
             + Add ASI Field
           </button>
@@ -603,28 +616,52 @@ const ASIGroupGrid = forwardRef<ASIGroupGridHandle, Props>(function ASIGroupGrid
             {selectedGroupNode
               ? `ASI Fields for "${toASIGroupRow(selectedGroupNode).appSpecInfoGroupCode || "(unnamed)"}" (${fieldRows.length})`
               : "Select an ASI Group above to see its fields"}
+            {midCollapsed && selectedFieldNode && (
+              <>
+                {" — "}
+                <strong>{toASIFieldRow(selectedFieldNode).r1CheckboxDesc || "(unnamed)"}</strong>
+              </>
+            )}
           </span>
         </div>
-        <div className={gridThemeClass} style={{ flex: 1, width: "100%", minHeight: 0 }}>
-          <AgGridReact<ASIFieldRow>
-            ref={fieldGridRef}
-            rowData={fieldRows}
-            columnDefs={fieldColumnDefs}
-            rowHeight={ROW_HEIGHT}
-            headerHeight={HEADER_HEIGHT}
-            getRowId={(p) => p.data.uid}
-            rowSelection="single"
-            onSelectionChanged={onFieldSelectionChanged}
-            onCellValueChanged={onFieldCellValueChanged}
-            stopEditingWhenCellsLoseFocus
-          />
-        </div>
+        {!midCollapsed && (
+          <div className={gridThemeClass} style={{ flex: 1, width: "100%", minHeight: 0 }}>
+            <AgGridReact<ASIFieldRow>
+              ref={fieldGridRef}
+              rowData={fieldRows}
+              columnDefs={fieldColumnDefs}
+              rowHeight={ROW_HEIGHT}
+              headerHeight={HEADER_HEIGHT}
+              getRowId={(p) => p.data.uid}
+              rowSelection="single"
+              onSelectionChanged={onFieldSelectionChanged}
+              onCellValueChanged={onFieldCellValueChanged}
+              stopEditingWhenCellsLoseFocus
+            />
+          </div>
+        )}
       </div>
 
-      <div className="resize-handle" onMouseDown={onMidHandleMouseDown} title="Drag to resize" />
+      {!midCollapsed && !bottomCollapsed && (
+        <div className="resize-handle" onMouseDown={onMidHandleMouseDown} title="Drag to resize" />
+      )}
 
-      <div className="grid-panel" style={{ flex: 1, minHeight: MIN_PANEL_PX }}>
+      <div
+        className="grid-panel"
+        style={
+          bottomCollapsed
+            ? { flex: "0 0 auto", height: "auto", minHeight: 0 }
+            : { flex: 1, minHeight: MIN_PANEL_PX }
+        }
+      >
         <div className="grid-toolbar">
+          <button
+            className="btn icon-btn"
+            onClick={() => setBottomCollapsed((c) => !c)}
+            title={bottomCollapsed ? "Expand Values" : "Collapse Values"}
+          >
+            {bottomCollapsed ? "▸" : "▾"}
+          </button>
           <button className="btn" onClick={addValueRow} disabled={!selectedFieldNode}>
             + Add Value
           </button>
@@ -641,19 +678,21 @@ const ASIGroupGrid = forwardRef<ASIGroupGridHandle, Props>(function ASIGroupGrid
               : "Select an ASI Field above to see its dropdown values"}
           </span>
         </div>
-        <div className={gridThemeClass} style={{ flex: 1, width: "100%", minHeight: 0 }}>
-          <AgGridReact<ASIDropdownValueRow>
-            ref={valueGridRef}
-            rowData={valueRows}
-            columnDefs={valueColumnDefs}
-            rowHeight={ROW_HEIGHT}
-            headerHeight={HEADER_HEIGHT}
-            getRowId={(p) => p.data.uid}
-            rowSelection="multiple"
-            onCellValueChanged={onValueCellValueChanged}
-            stopEditingWhenCellsLoseFocus
-          />
-        </div>
+        {!bottomCollapsed && (
+          <div className={gridThemeClass} style={{ flex: 1, width: "100%", minHeight: 0 }}>
+            <AgGridReact<ASIDropdownValueRow>
+              ref={valueGridRef}
+              rowData={valueRows}
+              columnDefs={valueColumnDefs}
+              rowHeight={ROW_HEIGHT}
+              headerHeight={HEADER_HEIGHT}
+              getRowId={(p) => p.data.uid}
+              rowSelection="multiple"
+              onCellValueChanged={onValueCellValueChanged}
+              stopEditingWhenCellsLoseFocus
+            />
+          </div>
+        )}
       </div>
     </div>
   );
