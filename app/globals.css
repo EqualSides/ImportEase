@@ -845,44 +845,88 @@ body.resizing-panels {
 }
 
 .script-text-modal {
-  width: 720px;
+  width: 960px;
   max-width: calc(100vw - 32px);
 }
 
-.expr-script-textarea-large {
-  min-height: 50vh;
-  max-height: 65vh;
-  font-size: 13px;
-}
-
-.expr-script-textarea {
+/* Two stacked layers, identical box metrics: a colored <pre> underneath
+   for display, an invisible textarea on top for real editing/selection/
+   scrolling. See components/CodeTextarea.tsx for why. */
+.code-textarea-wrap {
+  position: relative;
   width: 100%;
   box-sizing: border-box;
   min-height: 110px;
   max-height: 260px;
   resize: vertical;
-  font-family: var(--font-mono), monospace;
-  font-size: 12px;
-  line-height: 1.5;
-  color: var(--text-primary);
+  overflow: hidden;
   background: var(--bg-base);
   border: 1px solid var(--border-hairline);
   border-radius: 6px;
-  padding: 8px 10px;
-  white-space: pre-wrap;
-  overflow-wrap: break-word;
-  overflow-x: hidden;
-  overflow-y: auto;
 }
 
-.expr-script-textarea:focus {
-  outline: none;
+.code-textarea-wrap:focus-within {
   border-color: var(--accent-cyan-text);
 }
 
-.expr-script-textarea:disabled {
+.code-textarea-wrap-large {
+  min-height: 60vh;
+  max-height: 80vh;
+}
+
+.code-textarea-layer {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  border: none;
+  font-family: var(--font-mono), monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  padding: 8px 10px;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  overflow: auto;
+}
+
+.code-textarea-wrap-large .code-textarea-layer {
+  font-size: 13px;
+}
+
+.code-textarea-highlight {
+  color: var(--text-primary);
+  pointer-events: none;
+}
+
+.code-textarea-highlight code {
+  font: inherit;
+}
+
+.code-textarea-input {
+  background: transparent;
+  color: transparent;
+  caret-color: var(--text-primary);
+  resize: none;
+}
+
+.code-textarea-input:focus {
+  outline: none;
+}
+
+.code-textarea-input:disabled {
   opacity: 0.6;
   cursor: default;
+}
+
+.code-textarea-input::placeholder {
+  color: var(--text-muted);
+}
+
+.code-comment {
+  color: var(--text-muted);
+  font-style: italic;
 }
 
 /* Expression Builder code check ------------------------------------------ */

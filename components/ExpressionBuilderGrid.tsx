@@ -40,6 +40,7 @@ import {
   toExpressFieldRow,
 } from "@/lib/xml/expressionBuilder";
 import { type LintFinding, lintExpression } from "@/lib/xml/expressionLint";
+import CodeTextarea from "./CodeTextarea";
 
 /**
  * The fourth "heterogeneous-arm" grid (see VirProcessGrid.tsx for the
@@ -65,6 +66,8 @@ interface ColumnMeta {
   headerName: string;
   editable: boolean;
   hide?: boolean;
+  /** Constrains editing to a dropdown of exactly these values. */
+  values?: string[];
 }
 
 const EXPRESSION_COLUMN_META: ColumnMeta[] = [
@@ -77,7 +80,7 @@ const EXPRESSION_COLUMN_META: ColumnMeta[] = [
   { field: "executeIn", headerName: "Execute In", editable: true, hide: true },
   { field: "executeOrder", headerName: "Execute Order", editable: true, hide: true },
   { field: "expressionBehavior", headerName: "Behavior", editable: true, hide: true },
-  { field: "expressionMode", headerName: "Mode", editable: true },
+  { field: "expressionMode", headerName: "Mode", editable: true, values: ["Manual", "Wizard"] },
   { field: "expressionVersion", headerName: "Version", editable: true, hide: true },
   { field: "viewID", headerName: "View ID", editable: true, hide: true },
   { field: "scriptText", headerName: "Script Text", editable: true, hide: true },
@@ -168,6 +171,9 @@ function buildColumnDefs<T extends { uid: string }>(meta: ColumnMeta[], rows: T[
     hide: c.hide,
     resizable: true,
     width: c.hide ? undefined : widthForColumn(rows, c.field, c.headerName),
+    ...(c.values
+      ? { cellEditor: "agSelectCellEditor", cellEditorParams: { values: c.values } }
+      : undefined),
   })) as ColDef<T>[];
 }
 
@@ -589,14 +595,12 @@ const ExpressionBuilderGrid = forwardRef<ExpressionBuilderGridHandle, Props>(
               </button>
             </div>
             {!scriptTextCollapsed && (
-              <textarea
+              <CodeTextarea
                 id="expr-script-text-input"
-                className="expr-script-textarea"
                 value={selectedExprRow?.scriptText ?? ""}
-                onChange={(e) => onScriptTextChange(e.target.value)}
+                onChange={onScriptTextChange}
                 disabled={!selectedExprNode}
                 placeholder={selectedExprNode ? "" : "Select an Expression above to view/edit its script"}
-                spellCheck={false}
               />
             )}
           </div>
@@ -662,12 +666,11 @@ const ExpressionBuilderGrid = forwardRef<ExpressionBuilderGridHandle, Props>(
               <h2 className="lint-modal-title">
                 Script Text{selectedExprRow ? ` — ${selectedExprRow.expressionName || "(unnamed)"}` : ""}
               </h2>
-              <textarea
-                className="expr-script-textarea expr-script-textarea-large"
+              <CodeTextarea
                 value={selectedExprRow?.scriptText ?? ""}
-                onChange={(e) => onScriptTextChange(e.target.value)}
+                onChange={onScriptTextChange}
                 disabled={!selectedExprNode}
-                spellCheck={false}
+                large
                 autoFocus
               />
             </div>
