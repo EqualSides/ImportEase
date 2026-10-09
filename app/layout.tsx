@@ -18,24 +18,24 @@ const jetbrainsMono = JetBrains_Mono({
 export const metadata: Metadata = {
   // Lets relative/asset URLs in metadata resolve correctly, and gives
   // Next.js a base for alternates.canonical below. This app is reachable
-  // at both theperpetualhive.com/ImportEase (the public URL) and the raw
+  // at both theperpetualhive.com/ConfigLift (the public URL) and the raw
   // *.vercel.app deployment URL — the canonical tag tells search engines
   // to consolidate ranking on the public domain rather than treating them
   // as duplicate content.
   metadataBase: new URL("https://theperpetualhive.com"),
-  title: "ImportEase",
-  description: "Addon tool for Accela Configuration Manager",
+  title: "ConfigLift",
+  description: "Configuration migration and editing for Accela Configuration Manager exports",
   alternates: {
-    canonical: "/ImportEase",
+    canonical: "/ConfigLift",
   },
   openGraph: {
-    title: "ImportEase",
+    title: "ConfigLift",
     description: "Addon tool for Accela Configuration Manager",
-    url: "/ImportEase",
+    url: "/ConfigLift",
   },
   twitter: {
     card: "summary",
-    title: "ImportEase",
+    title: "ConfigLift",
     description: "Addon tool for Accela Configuration Manager",
   },
 };

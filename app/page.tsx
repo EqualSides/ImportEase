@@ -2328,7 +2328,7 @@ export default function Home() {
           <button className="btn icon-btn" onClick={toggleTheme} title="Toggle light/dark mode">
             {theme === "dark" ? "☀" : "☾"}
           </button>
-          ImportEase
+          ConfigLift
         </div>
 
         <div className={`saved-badge${savedVisible ? " visible" : ""}`}>
@@ -2489,7 +2489,7 @@ export default function Home() {
               >
                 {pill.text}
                 {pill.soon && (
-                  <a href="mailto:sampsondanielr@gmail.com?subject=ImportEase%20renewal">
+                  <a href="mailto:sampsondanielr@gmail.com?subject=ConfigLift%20renewal">
                     Contact us to renew
                   </a>
                 )}
@@ -2586,7 +2586,7 @@ export default function Home() {
         {!session ? (
           <div className="main-empty">
             {authChecked
-              ? "Sign in to use ImportEase — click “Login” above. No account? Use “Sign Up”."
+              ? "Sign in to use ConfigLift — click “Login” above. No account? Use “Sign Up”."
               : "Checking sign-in status…"}
           </div>
         ) : accessBlockedReason === "expired" ? (

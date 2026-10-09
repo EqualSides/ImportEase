@@ -1,5 +1,5 @@
 {
   "redirects": [
-    { "source": "/", "destination": "/ImportEase", "permanent": false }
+    { "source": "/", "destination": "/ConfigLift", "permanent": false }
   ]
 }

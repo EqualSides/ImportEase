@@ -1,12 +1,12 @@
-# ImportEase — Project Brief
+# ConfigLift — Project Brief
 
-**Project name:** ImportEase
+**Project name:** ConfigLift
 **Site:** theperpetualhive.com (domain owned via Porkbun, not yet built out)
 **Builder:** Solo, using Claude Code
 **Budget:** Free tier only for now — every architectural choice below is picked with that constraint in mind.
 
 **Infra already provisioned:**
-- GitHub: `https://github.com/EqualSides/ImportEase.git` (empty, awaiting first push)
+- GitHub: `https://github.com/EqualSides/ConfigLift.git` (empty, awaiting first push)
 - Vercel: project `importease`, linked to the GitHub repo above, deploys from `main` on push (team: EqualSides)
 - Supabase: project `importease`, region `us-east-2`, free tier, ref `kuriwvudktwrkexhrkwr`
 

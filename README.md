@@ -1,4 +1,4 @@
-# ImportEase — Accela Config Import/Export Tool
+# ConfigLift — Accela Config Import/Export Tool
 
 Milestone 1 (Standard Choices, end-to-end) is implemented: upload a
 Configuration Manager export `.zip`, edit `StandardChoice` records and their
