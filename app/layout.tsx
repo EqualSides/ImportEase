@@ -30,13 +30,13 @@ export const metadata: Metadata = {
   },
   openGraph: {
     title: "ConfigLift",
-    description: "Addon tool for Accela Configuration Manager",
+    description: "Configuration migration and editing for Accela Configuration Manager exports",
     url: "/ConfigLift",
   },
   twitter: {
     card: "summary",
     title: "ConfigLift",
-    description: "Addon tool for Accela Configuration Manager",
+    description: "Configuration migration and editing for Accela Configuration Manager exports",
   },
 };
 
